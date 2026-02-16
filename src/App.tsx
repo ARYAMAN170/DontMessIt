@@ -201,17 +201,23 @@ function DontMessItDashboard({ session }: { session: any }) {
   const [currentMealType, setCurrentMealType] = useState<number>(1);
   const [showSettings, setShowSettings] = useState(false);
 
+  // --- STATE FOR UI ---
   const [dailyProteinGoal, setDailyProteinGoal] = useState<number>(() => Number(localStorage.getItem('dontmessit_protein')) || 140);
   const [dailyCalorieGoal, setDailyCalorieGoal] = useState<number>(() => Number(localStorage.getItem('dontmessit_calories')) || 2800);
-
   const [selectedMess, setSelectedMess] = useState(() => localStorage.getItem('dontmessit_mess') || 'men-spc');
-  
+  const [userGoal, setUserGoal] = useState<'gain_weight' | 'lose_weight'>(() => {
+    return (localStorage.getItem('dontmessit_goal') as 'gain_weight' | 'lose_weight') || 'gain_weight';
+  });
+
   // --- DATE NAVIGATION STATE ---
   const [selectedDate, setSelectedDate] = useState(new Date());
 
+  const toggleGoal = (goal: 'gain_weight' | 'lose_weight') => {
+    setUserGoal(goal);
+    localStorage.setItem('dontmessit_goal', goal);
+  };
+
   const formatDateForDB = (date: Date) => {
-    // Format: YYYY-MM-DD (e.g., 2023-10-27)
-    // We use 'en-CA' because it outputs YYYY-MM-DD by default.
     return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   };
 
@@ -242,10 +248,7 @@ function DontMessItDashboard({ session }: { session: any }) {
       default: return "Unknown";
     }
   };
-// Put this near your other state variables at the top of DontMessItDashboard
-const [userGoal, setUserGoal] = useState<'bulk' | 'cut'>(() => {
-  return (localStorage.getItem('dontmessit_goal') as 'bulk' | 'cut') || 'bulk';
-});
+
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -261,9 +264,7 @@ const [userGoal, setUserGoal] = useState<'bulk' | 'cut'>(() => {
           supabase.from('food_dictionary').select('*')
         ]);
 
-        // If data is empty for the selected date, we just show empty
         setMealsOfDay(menusResponse.data || []);
-        
         if (dictResponse.data) setFoodDictionary(dictResponse.data);
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -273,16 +274,13 @@ const [userGoal, setUserGoal] = useState<'bulk' | 'cut'>(() => {
     fetchData();
   }, [selectedMess, selectedDate]);
 
-  // --- THE THALI ENGINE (GROUPS MEALS LOGICALLY) ---
+  // --- THE THALI ENGINE ---
   const buildPersonalizedPlate = (rawItems: string[]) => {
     if (!foodDictionary.length) return { recommendations: [], total_estimated_protein: 0 };
-
     const targetMealProtein = dailyProteinGoal / 4; 
     let currentProtein = 0;
-    
-    // THE FIX: Global tracker for all liquids
     let totalLiquidServings = 0; 
-    const MAX_LIQUIDS_PER_MEAL = 2; // Hard cap so you don't drown
+    const MAX_LIQUIDS_PER_MEAL = 2; 
 
     const plateMap = new Map<string, OptimizedPlateItem>();
 
@@ -298,22 +296,16 @@ const [userGoal, setUserGoal] = useState<'bulk' | 'cut'>(() => {
       const existing = plateMap.get(item.item_name)?.servings || 0;
       let maxAllowed = item.is_limited ? (item.max_servings || 1) : (item.max_servings || 2);
 
-      // --- GLOBAL LIQUID CAP LOGIC ---
       if (item.category === 'liquid_side') {
         const liquidRoomLeft = MAX_LIQUIDS_PER_MEAL - totalLiquidServings;
-        if (liquidRoomLeft <= 0) return; // Stomach is full of liquids!
-        
-        // Restrict this item if it pushes us over the global limit
+        if (liquidRoomLeft <= 0) return; 
         maxAllowed = Math.min(maxAllowed, existing + liquidRoomLeft);
       }
 
       const canAdd = Math.min(count, maxAllowed - existing);
       if (canAdd <= 0) return;
 
-      // Log the liquid addition
-      if (item.category === 'liquid_side') {
-        totalLiquidServings += canAdd;
-      }
+      if (item.category === 'liquid_side') totalLiquidServings += canAdd;
 
       const pYield = item.protein_per_serving * canAdd;
       if (plateMap.has(item.item_name)) {
@@ -329,12 +321,7 @@ const [userGoal, setUserGoal] = useState<'bulk' | 'cut'>(() => {
       currentProtein += pYield;
     };
 
-    // --- MEAL ASSEMBLY ---
-    
-    // 1. CARB BASE: Take 1 serving (Aloo Paratha/Idli)
     if (carbs.length > 0) addServing(carbs[0], 1);
-
-    // 2. PROTEIN MAIN: Take ALL solid proteins first
     proteins.forEach(p => {
       if (currentProtein < targetMealProtein) {
         const needed = targetMealProtein - currentProtein;
@@ -342,7 +329,6 @@ const [userGoal, setUserGoal] = useState<'bulk' | 'cut'>(() => {
       }
     });
 
-    // 3. LIQUID FILL: Only use liquids to bridge the gap (up to the max of 2!)
     if (currentProtein < targetMealProtein) {
       liquids.forEach(l => {
         if (currentProtein < targetMealProtein) {
@@ -352,27 +338,18 @@ const [userGoal, setUserGoal] = useState<'bulk' | 'cut'>(() => {
       });
     }
 
-    // --- PHASE 4: THE EMERGENCY SWEEP ---
     if (currentProtein < targetMealProtein) {
-      // Find extra items (sides, extra carbs etc)
       const sides = matchedItems.filter(i => i.category === 'healthy_extra' || i.category === 'side');
       let remainingItems = [...sides, ...carbs.slice(1)];
-      
-      // THE NEW BRAIN: Sort based on goal!
       remainingItems.sort((a, b) => {
-        if (userGoal === 'bulk') {
+        if (userGoal === 'gain_weight') {
           return (b.diet_tag === 'dense_calorie' ? 1 : 0) - (a.diet_tag === 'dense_calorie' ? 1 : 0);
         } else {
           return (b.diet_tag === 'volume_filler' ? 1 : 0) - (a.diet_tag === 'volume_filler' ? 1 : 0);
         }
       });
-
       remainingItems.forEach(item => {
-        if (currentProtein < targetMealProtein) {
-          const needed = targetMealProtein - currentProtein;
-          // Just add 1 serving if we are still short
-          addServing(item, 1);
-        }
+        if (currentProtein < targetMealProtein) addServing(item, 1);
       });
     }
 
@@ -386,181 +363,212 @@ const [userGoal, setUserGoal] = useState<'bulk' | 'cut'>(() => {
   });
 
   return (
-    <div className="max-w-md mx-auto p-5 font-sans min-h-screen bg-gray-50 text-gray-900 pb-20">
+    <div className="max-w-md mx-auto min-h-screen pb-20 pt-6 px-4">
       
-      {/* Header */}
-      <header className="mb-4 flex justify-between items-start">
+      {/* UPDATE: Header & Settings */}
+      <header className="flex justify-between items-center mb-6">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">DontMessIt</h1>
-            <button onClick={() => setShowSettings(!showSettings)} className="bg-gray-200 p-2 rounded-full text-sm hover:bg-gray-300 transition">⚙️</button>
+          <h1 className="text-2xl font-black tracking-tight text-white mb-1">
+            Mess Menu
+          </h1>
+          <div className="flex items-center gap-2">
+            <select 
+              value={selectedMess} 
+              onChange={(e) => { setSelectedMess(e.target.value); localStorage.setItem('dontmessit_mess', e.target.value); }} 
+              className="appearance-none bg-slate-800 text-slate-300 text-xs font-bold py-1 px-3 rounded-full border border-slate-700 outline-none focus:border-blue-500"
+            >
+              {MESS_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
           </div>
-          <p className="text-gray-500 font-medium mt-1">{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>
         </div>
-        <select value={selectedMess} onChange={(e) => { setSelectedMess(e.target.value); localStorage.setItem('dontmessit_mess', e.target.value); }} className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-3 rounded-lg shadow-sm text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
-          {MESS_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-        </select>
+        <button onClick={() => setShowSettings(!showSettings)} className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 active:scale-95 transition-all">
+          <span className="text-xl">⚙️</span>
+        </button>
       </header>
 
-      {/* --- DATE NAVIGATOR --- */}
-      <div className="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-gray-100 mb-6">
-        <button 
-          onClick={() => changeDate(-1)}
-          className="w-10 h-10 flex items-center justify-center bg-gray-50 text-gray-600 rounded-xl active:bg-gray-200 transition-colors"
-        >
-          {/* Left Arrow Icon */}
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+      {/* UPDATE: Date Navigator (Glass Style) */}
+      <div className="glass-panel rounded-2xl p-1 flex items-center justify-between mb-8">
+        <button onClick={() => changeDate(-1)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/5 active:scale-95 text-slate-400">
+           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
-        
-        <div className="flex flex-col items-center cursor-pointer" onClick={() => setSelectedDate(new Date())}>
-          <span className="text-sm font-black text-gray-800 uppercase tracking-widest">
-            {typeof formatUI_Date === 'function' ? formatUI_Date(selectedDate) : selectedDate.toDateString()}
+        <div className="flex flex-col items-center">
+          <span className="text-xs font-black uppercase tracking-widest text-slate-500">
+            {formatUI_Date(selectedDate) === "Today" ? "Today's Plan" : "Viewing"}
           </span>
-          {typeof formatUI_Date === 'function' && formatUI_Date(selectedDate) !== "Today" && (
-            <span className="text-[10px] text-blue-500 font-bold mt-0.5">Tap for Today</span>
-          )}
+          <span className="text-sm font-bold text-white">
+            {selectedDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', weekday: 'short' })}
+          </span>
         </div>
-
-        <button 
-          onClick={() => changeDate(1)}
-          className="w-10 h-10 flex items-center justify-center bg-gray-50 text-gray-600 rounded-xl active:bg-gray-200 transition-colors"
-        >
-          {/* Right Arrow Icon */}
+        <button onClick={() => changeDate(1)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/5 active:scale-95 text-slate-400">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
         </button>
       </div>
 
       {showSettings && (
-        <div className="bg-white p-5 rounded-2xl shadow-md border border-gray-200 mb-6 transition-all">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-bold text-gray-800">Macro Targets</h3>
-            <button onClick={() => supabase.auth.signOut()} className="text-xs text-red-500 font-bold bg-red-50 px-2 py-1 rounded">Sign Out</button>
+        <div className="glass-panel p-5 rounded-2xl mb-8 animate-fade-in-up">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-bold text-white">Manual Targets</h3>
+            <button onClick={() => supabase.auth.signOut()} className="text-[10px] font-bold text-red-400 bg-red-900/20 px-3 py-1.5 rounded-lg border border-red-900/50">LOGOUT</button>
           </div>
-          <div className="flex gap-4">
-            <input type="number" value={dailyProteinGoal} onChange={(e) => { setDailyProteinGoal(Number(e.target.value)); localStorage.setItem('dontmessit_protein', e.target.value); }} className="w-full bg-gray-50 border p-2 rounded-lg font-bold" />
-            <input type="number" value={dailyCalorieGoal} onChange={(e) => { setDailyCalorieGoal(Number(e.target.value)); localStorage.setItem('dontmessit_calories', e.target.value); }} className="w-full bg-gray-50 border p-2 rounded-lg font-bold" />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Protein (g)</label>
+              <input type="number" value={dailyProteinGoal} onChange={(e) => { setDailyProteinGoal(Number(e.target.value)); localStorage.setItem('dontmessit_protein', e.target.value); }} className="w-full bg-slate-900 border border-slate-700 text-white p-3 rounded-xl font-bold focus:border-blue-500 outline-none" />
+            </div>
+            <div>
+              <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Calories</label>
+              <input type="number" value={dailyCalorieGoal} onChange={(e) => { setDailyCalorieGoal(Number(e.target.value)); localStorage.setItem('dontmessit_calories', e.target.value); }} className="w-full bg-slate-900 border border-slate-700 text-white p-3 rounded-xl font-bold focus:border-blue-500 outline-none" />
+            </div>
           </div>
         </div>
       )}
 
-      <main>
-        {loading ? <div className="animate-pulse flex h-32 items-center justify-center">Loading...</div> : (
-          <div className="space-y-6">
-            {sortedMeals.map((meal) => {
-              const isCurrent = meal.meal_type === currentMealType;
+      {/* MAIN CONTENT AREA */}
+      <main className="space-y-6">
+        {loading ? (
+             <div className="flex flex-col items-center justify-center p-10 space-y-4">
+               <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+               <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Crunching Macros...</p>
+             </div>
+        ) : (
+          sortedMeals.map((meal) => {
+            const isCurrent = meal.meal_type === currentMealType;
+            
+            // ANALYTICS LOGIC (Same as before)
+            const matchedItems = meal.raw_items
+              .map(rawItem => foodDictionary.find(dict => dict.item_name.toLowerCase() === rawItem.toLowerCase()))
+              .filter((item): item is FoodItem => item !== undefined);
 
-// 1. Find all items on today's menu that exist in our DB
-const matchedItems = meal.raw_items
-  .map(rawItem => foodDictionary.find(dict => dict.item_name.toLowerCase() === rawItem.toLowerCase()))
-  .filter((item): item is FoodItem => item !== undefined);
+            const availableProteins = matchedItems
+              .filter(i => i.protein_per_serving >= 4)
+              .sort((a,b) => b.protein_per_serving - a.protein_per_serving);
 
-// 2. Extract the Top Protein Hitters (Anything > 4g of protein)
-const availableProteins = matchedItems
-  .filter(i => i.protein_per_serving >= 4)
-  .sort((a,b) => b.protein_per_serving - a.protein_per_serving);
+            const customPlate = buildPersonalizedPlate(meal.raw_items);
 
-const customPlate = buildPersonalizedPlate(meal.raw_items);
+            const grouped = {
+              carb: customPlate.recommendations.filter(i => i.category === 'carb_main'),
+              protein: customPlate.recommendations.filter(i => i.category === 'protein_main'),
+              filler: customPlate.recommendations.filter(i => i.category === 'liquid_side'),
+              extra: customPlate.recommendations.filter(i => i.category === 'side' || i.category === 'healthy_extra')
+            };
 
-const grouped = {
-  carb: customPlate.recommendations.filter(i => i.category === 'carb_main'),
-  protein: customPlate.recommendations.filter(i => i.category === 'protein_main'),
-  filler: customPlate.recommendations.filter(i => i.category === 'liquid_side'),
-  extra: customPlate.recommendations.filter(i => i.category === 'side' || i.category === 'healthy_extra')
-};
+            const primaryColor = userGoal === 'gain_weight' ? 'blue' : 'orange';
 
-return (
-  <div key={meal.meal_type} className={`bg-white rounded-3xl shadow-sm border overflow-hidden transition-all ${isCurrent ? 'border-blue-500 shadow-xl scale-[1.02]' : 'opacity-80'}`}>
-    
-    {/* MEAL HEADER */}
-    <div className={`p-4 flex justify-between items-center ${isCurrent ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
-      <h2 className="text-xl font-black italic uppercase">{getMealName(meal.meal_type)}</h2>
-      <span className="text-xl font-black">+{customPlate.total_estimated_protein}g</span>
-    </div>
-    
-    <div className="p-5 space-y-6">
-      
-      {/* --- NEW: THE COACHING DASHBOARD --- */}
-      <div className="space-y-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-        
-        {/* Available Protein Hitters */}
-        <div>
-          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-            🎯 Available Protein Hitters
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {availableProteins.length > 0 ? availableProteins.map(p => (
-              <span key={p.id} className="bg-white border border-gray-200 text-gray-700 px-2 py-1 rounded-lg text-xs font-bold shadow-sm">
-                {p.item_name} <span className="text-green-600 ml-1">{p.protein_per_serving}g</span>
-              </span>
-            )) : (
-              <span className="text-xs text-gray-400 italic">No high-protein items listed for this meal.</span>
-            )}
-          </div>
-        </div>
+            return (
+              <div key={meal.meal_type} className={`relative glass-card rounded-3xl overflow-hidden transition-all duration-500 border border-white/5 shadow-2xl backdrop-blur-2xl ${isCurrent ? `ring-1 ring-${primaryColor}-500/50 shadow-[0_0_40px_rgba(59,130,246,0.15)] opacity-100 scale-[1.02]` : 'opacity-60 scale-95 grayscale-[0.3]'}`}>
+                
+                {/* Glossy Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none"></div>
 
-        {/* Dynamic Goal Strategy */}
-        <div className={`p-4 rounded-2xl border ${userGoal === 'bulk' ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'} shadow-sm`}>
-          <h3 className={`text-[11px] font-black uppercase tracking-widest mb-2 flex items-center gap-2 ${userGoal === 'bulk' ? 'text-blue-800' : 'text-orange-800'}`}>
-            {userGoal === 'bulk' ? '📈 Your Bulking Playbook' : '📉 Your Cutting Playbook'}
-          </h3>
-          
-          <p className={`text-sm font-medium leading-relaxed ${userGoal === 'bulk' ? 'text-blue-900' : 'text-orange-900'}`}>
-            {(() => {
-              // 1. Scan today's matched items for their specific diet tags
-              const availableFillers = matchedItems.filter(i => i.diet_tag === 'volume_filler').map(i => i.item_name);
-              const availableDense = matchedItems.filter(i => i.diet_tag === 'dense_calorie').map(i => i.item_name);
-              const primaryProtein = availableProteins[0]?.item_name || 'the main protein';
+                {/* CARD HEADER */}
+                <div className="p-6 flex justify-between items-center relative z-10 border-b border-white/5 bg-black/20">
+                  <div>
+                    <h2 className="text-2xl font-black italic uppercase text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">{getMealName(meal.meal_type)}</h2>
+                    <p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isCurrent ? `text-${primaryColor}-400` : 'text-slate-500'}`}>
+                      {isCurrent ? 'Current Session' : 'Up Next'}
+                    </p>
+                  </div>
+                  <div className={`px-4 py-2 rounded-xl border border-${primaryColor}-500/20 bg-${primaryColor}-500/10 backdrop-blur-md shadow-[0_0_15px_rgba(59,130,246,0.1)]`}>
+                    <span className={`text-2xl font-black text-${primaryColor}-400`}>+{customPlate.total_estimated_protein}</span>
+                    <span className={`text-[10px] font-bold ml-1 text-${primaryColor}-300`}>g PRO</span>
+                  </div>
+                </div>
 
-              // 2. Generate Bulking Advice
-              if (userGoal === 'bulk') {
-                let text = `Secure your gains with ${primaryProtein}. `;
-                if (availableDense.length > 0) {
-                  text += `To easily hit your calorie surplus today, absolutely prioritize the ${availableDense.slice(0, 2).join(' and ')}. `;
-                } else {
-                  text += `There aren't many heavy items today, so lean heavily on dairy (like Curd/Milk) or take double servings of rice to hit your surplus. `;
-                }
-                if (availableFillers.length > 0) {
-                  text += `Don't stuff yourself on the ${availableFillers[0]} before you finish your protein!`;
-                }
-                return text;
-              } 
-              
-              // 3. Generate Cutting Advice
-              else {
-                let text = `Protect your muscle mass by eating the ${primaryProtein} first. `;
-                if (availableFillers.length > 0) {
-                  text += `To stay full in your calorie deficit, load up your tray with ${availableFillers.slice(0, 2).join(' and ')}. `;
-                } else {
-                  text += `Watch out—there are almost no low-calorie volume foods on the menu today. Drink a large glass of water before eating. `;
-                }
-                if (availableDense.length > 0) {
-                  text += `Stay away from the ${availableDense[0]} if you want to stay under your calorie limit!`;
-                }
-                return text;
-              }
-            })()}
-          </p>
-        </div>
-      </div>
+                {/* SECTION 1: PROTEIN HITTERS (SCROLLABLE ROW) */}
+                {availableProteins.length > 0 && (
+                  <div className="px-6 py-4 overflow-x-auto whitespace-nowrap scrollbar-hide border-b border-white/5 bg-white/[0.02]">
+                    <div className="flex gap-3">
+                      {availableProteins.map((p, idx) => (
+                        <div key={idx} className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-${primaryColor}-500/30 bg-${primaryColor}-500/5 backdrop-blur-sm`}>
+                          <span className="text-[10px]">🔥</span>
+                          <span className={`text-xs font-bold text-${primaryColor}-100 uppercase tracking-wide`}>{p.item_name}</span>
+                          <span className={`text-xs font-black text-${primaryColor}-400`}>{p.protein_per_serving}g</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="p-6 space-y-8 relative z-10">
+                  
+                  {/* STRATEGY BOX (Context Aware) with Premium Gradient */}
+                  <div className={`p-5 rounded-2xl border relative overflow-hidden group ${userGoal === 'gain_weight' ? 'bg-gradient-to-br from-blue-900/40 to-slate-900/40 border-blue-500/20' : 'bg-gradient-to-br from-orange-900/40 to-slate-900/40 border-orange-500/20'}`}>
+                    <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${userGoal === 'gain_weight' ? 'from-blue-500 to-transparent' : 'from-orange-500 to-transparent'}`}></div>
+                    <div className="relative z-10">
+                      <h3 className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 flex items-center gap-2 ${userGoal === 'gain_weight' ? 'text-blue-400' : 'text-orange-400'}`}>
+                        {userGoal === 'gain_weight' ? '⚡ BULK STRATEGY' : '🔥 CUT STRATEGY'}
+                      </h3>
+                      <p className="text-sm font-medium leading-relaxed text-slate-200">
+                      {(() => {
+                        const availableFillers = matchedItems.filter(i => i.category === 'healthy_extra' || i.category === 'side').map(i => i.item_name);
+                        const availableDense = matchedItems.filter(i => i.category === 'carb_main' && i.calories_per_serving > 150).map(i => i.item_name);
+                        const primaryProtein = availableProteins[0]?.item_name || 'the main protein';
 
-      {/* --- EXISTING: AI PLATE RECOMMENDATION --- */}
-      <div>
-        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 border-b border-gray-100 pb-2">
-          🤖 AI Suggested Plate
-        </h3>
-        <div className="space-y-2">
-          {grouped.carb.map((i, idx) => <div key={`c-${idx}`} className="flex justify-between text-sm p-3 bg-orange-50 rounded-xl border border-orange-100"><div><b>{i.servings}x {i.item}</b><br/><span className="text-[10px] text-orange-500 font-bold uppercase">Carb Base</span></div> <span>{i.protein}g</span></div>)}
-          {grouped.protein.map((i, idx) => <div key={`p-${idx}`} className="flex justify-between text-sm p-3 bg-red-50 rounded-xl border border-red-100"><div><b>{i.servings}x {i.item}</b><br/><span className="text-[10px] text-red-500 font-bold uppercase">{i.is_limited ? 'Limited' : 'Solid Protein'}</span></div> <span>{i.protein}g</span></div>)}
-          {grouped.filler.map((i, idx) => <div key={`f-${idx}`} className="flex justify-between text-sm p-3 bg-green-50 rounded-xl border border-green-100"><div><b>{i.servings}x {i.item}</b><br/><span className="text-[10px] text-green-600 font-bold uppercase">Liquid Fill</span></div> <span>{i.protein}g</span></div>)}
-          {grouped.extra.map((i, idx) => <div key={`e-${idx}`} className="flex justify-between text-sm p-3 bg-purple-50 rounded-xl border border-purple-100"><div><b>{i.servings}x {i.item}</b><br/><span className="text-[10px] text-purple-500 font-bold uppercase">Extra Side</span></div> <span>{i.protein}g</span></div>)}
-        </div>
-      </div>
+                        if (userGoal === 'gain_weight') {
+                          let text = `Prioritize ${primaryProtein} first. `;
+                          if (availableDense.length > 0) text += `Double up on ${availableDense[0]} for easy mass. `;
+                          else text += `Use Milk/Curd to hit your calorie targets easily. `;
+                          return text;
+                        } else {
+                          let text = `Focus heavily on ${primaryProtein}. `;
+                          if (availableFillers.length > 0) text += `Load your plate with ${availableFillers[0]} for volume. `;
+                          if (availableDense.length > 0) text += `Skip the ${availableDense[0]} completely to save calories.`;
+                          else text += `Drink 500ml water before eating to manage appetite.`;
+                          return text;
+                        }
+                      })()}
+                      </p>
+                    </div>
+                  </div>
 
-      <p className="text-[10px] text-gray-400 font-bold uppercase mt-4 text-center">Full Menu: {meal.raw_items.join(', ')}</p>
-    </div>
-  </div>
-);})}
-          </div>
+                  {/* AI PLATE */}
+                  <div>
+                    <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.25em] mb-5 flex items-center gap-4">
+                       PLATE BLUEPRINT
+                       <div className="h-px bg-gradient-to-r from-slate-800 to-transparent flex-1"></div>
+                    </h3>
+                    
+                    <div className="space-y-4">
+                      {[
+                         ...grouped.protein.map(i => ({...i, type: 'prot'})),
+                         ...grouped.carb.map(i => ({...i, type: 'carb'})),
+                         ...grouped.filler.map(i => ({...i, type: 'fill'})),
+                         ...grouped.extra.map(i => ({...i, type: 'extra'}))
+                      ].map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center group">
+                          <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shadow-lg ${
+                              item.type === 'prot' ? 'bg-green-500/10 text-green-400 border border-green-500/20 shadow-green-900/20' :
+                              item.type === 'carb' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-orange-900/20' :
+                              'bg-slate-800/50 text-slate-400 border border-slate-700/50'
+                            }`}>
+                              {item.servings}x
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-200 group-hover:text-white transition-colors tracking-wide">{item.item}</p>
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                {item.type === 'prot' ? 'High Protein' : item.type === 'carb' ? 'Carb Source' : 'Volume / Side'}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-bold text-slate-500 bg-white/5 py-1 px-2 rounded-md border border-white/5">{item.protein}g</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* SECTION 2: FULL RAW MENU (RESTORED) */}
+                  <div className="pt-6 border-t border-white/5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Full Menu</p>
+                    <p className="text-xs font-medium text-slate-400 leading-6 tracking-wide opacity-80">
+                      {meal.raw_items.join(' • ')}
+                    </p>
+                  </div>
+
+                </div>
+              </div>
+            );
+          })
         )}
       </main>
     </div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { supabase } from './supabaseClient';
 
 export default function Auth() {
-  const [regNumber, setRegNumber] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -11,11 +11,10 @@ export default function Auth() {
     setLoading(true);
     setMessage('');
 
-    // Format the email automatically
-    const vitEmail = `${regNumber.trim().toLowerCase()}@vitstudent.ac.in`;
+    const finalEmail = emailInput.trim().toLowerCase();
 
     const { error } = await supabase.auth.signInWithOtp({
-      email: vitEmail,
+      email: finalEmail,
       options: {
         emailRedirectTo: window.location.origin,
       },
@@ -24,48 +23,53 @@ export default function Auth() {
     if (error) {
       setMessage(`❌ ${error.message}`);
     } else {
-      setMessage('✅ Magic link sent! Check your VIT Outlook inbox.');
+      setMessage('✅ Access Link Sent! Check your Outlook.');
     }
     setLoading(false);
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 p-4 font-sans">
-      <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border-t-4 border-blue-600">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight mb-2">UnMess</h1>
-          <p className="text-sm font-bold text-blue-600 uppercase tracking-widest">Campus Exclusive</p>
+    <div className="flex items-center justify-center min-h-screen relative overflow-hidden bg-[#0F172A] p-4 text-white">
+      {/* Background Decor */}
+      <div className="absolute top-[-10%] right-[-5%] w-64 h-64 bg-blue-600/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] left-[-5%] w-64 h-64 bg-orange-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div className="glass-panel p-8 rounded-3xl max-w-sm w-full border border-white/10 relative z-10">
+        <div className="text-center mb-10">
+          <h1 className="text-5xl font-black italic tracking-tighter mb-2 bg-gradient-to-r from-blue-400 to-white bg-clip-text text-transparent transform -skew-x-12">
+            DONTMESSIT
+          </h1>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.3em]">
+            Campus Performance Nutrition
+          </p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">VIT Registration Number / Name</label>
-            <div className="flex items-center bg-gray-50 border border-gray-200 rounded-xl overflow-hidden focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-200 transition-all">
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Student Email Only (VIT)</label>
+            <div className="relative group">
               <input
-                type="text"
-                placeholder="firstname.lastname202x"
-                value={regNumber}
-                onChange={(e) => setRegNumber(e.target.value)}
-                className="w-full p-3 bg-transparent text-gray-900 font-medium outline-none"
+                type="email"
+                placeholder="firstname.lastname202x@vitstudent.ac.in"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-bold text-white placeholder-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all outline-none"
                 required
               />
-              <span className="pr-3 text-sm font-bold text-gray-400 select-none">
-                @vitstudent.ac.in
-              </span>
             </div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gray-900 text-white font-bold py-3.5 rounded-xl hover:bg-black active:scale-95 transition-all shadow-md disabled:opacity-50 disabled:active:scale-100"
+            className="w-full bg-blue-600 text-white font-black uppercase tracking-wider py-4 rounded-xl hover:bg-blue-500 active:scale-95 transition-all shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:active:scale-100"
           >
-            {loading ? 'Sending link...' : 'Send Magic Link'}
+            {loading ? 'Authenticating...' : 'lOGIN'}
           </button>
         </form>
 
         {message && (
-          <div className="mt-6 p-4 bg-gray-50 rounded-xl text-center text-sm font-semibold text-gray-800 border border-gray-100">
+          <div className="mt-6 p-4 bg-slate-800/50 rounded-xl text-center text-sm font-bold text-slate-300 border border-slate-700 animate-fade-in-up">
             {message}
           </div>
         )}

@@ -1,0 +1,17 @@
+{
+  "short_name": "DontMessIt",
+  "name": "DontMessIt | Pro Nutrition",
+  "icons": [
+    {
+      "src": "/image.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0F172A",
+  "background_color": "#0F172A",
+  "orientation": "portrait"
+}

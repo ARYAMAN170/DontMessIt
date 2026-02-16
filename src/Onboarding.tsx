@@ -60,80 +60,135 @@ export default function Onboarding({ session, onComplete }: { session: any, onCo
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 p-6 font-sans">
-      <div className="flex-1 max-w-md w-full mx-auto flex flex-col justify-center">
+    <div className="flex flex-col min-h-screen bg-[#0F172A] p-6 text-white overflow-hidden relative">
+      {/* Background Blobs */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-900/20 rounded-full blur-[100px] pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-orange-900/20 rounded-full blur-[100px] pointer-events-none"></div>
+
+      <div className="flex-1 max-w-md w-full mx-auto flex flex-col justify-center relative z-10">
         
-        {/* Progress Bar */}
-        <div className="w-full bg-gray-200 rounded-full h-2 mb-8">
-          <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${(step / 3) * 100}%` }}></div>
+        {/* Progress System */}
+        <div className="flex justify-between mb-8 items-end px-2">
+           <h2 className="text-4xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
+             STEP 0{step}
+           </h2>
+           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+             Setup Phase
+           </span>
         </div>
 
         {step === 1 && (
-          <div className="animate-fade-in-up">
-            <h1 className="text-3xl font-extrabold text-gray-900 mb-2">How do you eat?</h1>
-            <p className="text-gray-500 mb-8">We'll filter the mess menu based on this.</p>
+          <div className="glass-panel p-6 rounded-3xl animate-fade-in-up border border-white/5">
+            <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-wide">Nutrition Source</h1>
+            <p className="text-xs text-slate-400 mb-8 font-medium leading-relaxed">
+              We'll auto-filter the mess menu to show only what you can eat.
+            </p>
             
             <div className="space-y-3">
               {['veg', 'egg', 'non-veg'].map((type) => (
                 <button
                   key={type}
                   onClick={() => setDiet(type)}
-                  className={`w-full p-4 rounded-2xl border-2 font-bold text-left capitalize transition-all ${
-                    diet === type ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-600'
+                  className={`w-full p-5 rounded-2xl border font-black text-left uppercase tracking-wider transition-all duration-300 relative overflow-hidden group ${
+                    diet === type 
+                    ? 'border-blue-500 bg-blue-600/20 text-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.3)]' 
+                    : 'border-slate-700 bg-slate-800/30 text-slate-500 hover:border-slate-500 hover:bg-slate-700/50'
                   }`}
                 >
-                  {type === 'veg' ? '🥦 Pure Vegetarian' : type === 'egg' ? '🍳 Eggetarian' : '🍗 Non-Vegetarian'}
+                  <span className="relative z-10 flex justify-between items-center">
+                    {type === 'veg' ? '🥦 Pure Vegetarian' : type === 'egg' ? '🍳 Eggetarian' : '🍗 Non-Vegetarian'}
+                    {diet === type && <div className="w-2 h-2 rounded-full bg-blue-400 shadow-[0_0_10px_currentColor]"></div>}
+                  </span>
                 </button>
               ))}
             </div>
-            <button onClick={() => setStep(2)} className="w-full mt-10 bg-gray-900 text-white font-bold py-4 rounded-xl hover:bg-black active:scale-95 transition-all">Next</button>
+            
+            <button onClick={() => setStep(2)} className="w-full mt-10 bg-white text-slate-900 font-black uppercase tracking-widest py-4 rounded-xl hover:bg-slate-200 active:scale-95 transition-all shadow-lg">
+              Confirm & Next
+            </button>
           </div>
         )}
 
         {step === 2 && (
-          <div className="animate-fade-in-up">
-            <h1 className="text-3xl font-extrabold text-gray-900 mb-2">Your Current Stats</h1>
-            <p className="text-gray-500 mb-8">Used to calculate your basal metabolic rate.</p>
+          <div className="glass-panel p-6 rounded-3xl animate-fade-in-up border border-white/5">
+            <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-wide">Physique Stats</h1>
+            <p className="text-xs text-slate-400 mb-8 font-medium leading-relaxed">
+              Required to calculate your Basal Metabolic Rate (BMR).
+            </p>
             
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">Height (cm)</label>
-                <input type="number" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="e.g. 175" className="w-full p-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" />
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1 mb-2 block">Height (cm)</label>
+                <input 
+                  type="number" 
+                  value={height} 
+                  onChange={(e) => setHeight(e.target.value)} 
+                  placeholder="175" 
+                  className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-black text-2xl text-white placeholder-slate-700 focus:border-blue-500 outline-none transition-all" 
+                />
               </div>
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">Current Weight (kg)</label>
-                <input type="number" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="e.g. 65" className="w-full p-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" />
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1 mb-2 block">Current Weight (kg)</label>
+                <input 
+                  type="number" 
+                  value={weight} 
+                  onChange={(e) => setWeight(e.target.value)} 
+                  placeholder="65" 
+                  className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-black text-2xl text-white placeholder-slate-700 focus:border-blue-500 outline-none transition-all" 
+                />
               </div>
             </div>
             
-            <div className="flex gap-3 mt-10">
-              <button onClick={() => setStep(1)} className="px-6 bg-gray-200 text-gray-800 font-bold py-4 rounded-xl hover:bg-gray-300 transition-all">Back</button>
-              <button onClick={() => setStep(3)} disabled={!height || !weight} className="flex-1 bg-gray-900 text-white font-bold py-4 rounded-xl hover:bg-black active:scale-95 transition-all disabled:opacity-50">Next</button>
+            <div className="flex gap-4 mt-10">
+              <button onClick={() => setStep(1)} className="px-6 bg-slate-800 text-slate-400 font-bold py-4 rounded-xl hover:bg-slate-700 transition-all uppercase text-xs tracking-wider">Back</button>
+              <button onClick={() => setStep(3)} disabled={!height || !weight} className="flex-1 bg-white text-slate-900 font-black uppercase tracking-widest py-4 rounded-xl hover:bg-slate-200 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                Next Step
+              </button>
             </div>
           </div>
         )}
 
         {step === 3 && (
-          <div className="animate-fade-in-up">
-            <h1 className="text-3xl font-extrabold text-gray-900 mb-2">The Goal</h1>
-            <p className="text-gray-500 mb-8">How much are we trying to change?</p>
+          <div className="glass-panel p-6 rounded-3xl animate-fade-in-up border border-white/5">
+            <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-wide">The Mission</h1>
+            <p className="text-xs text-slate-400 mb-8 font-medium leading-relaxed">
+              Define your target. Be realistic.
+            </p>
             
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">Target Weight (kg)</label>
-                <input type="number" value={targetWeight} onChange={(e) => setTargetWeight(e.target.value)} placeholder="e.g. 75" className="w-full p-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" />
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1 mb-2 block">Target Weight (kg)</label>
+                <input 
+                  type="number" 
+                  value={targetWeight} 
+                  onChange={(e) => setTargetWeight(e.target.value)} 
+                  placeholder="75" 
+                  className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-black text-2xl text-white placeholder-slate-700 focus:border-blue-500 outline-none transition-all" 
+                />
               </div>
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">Timeline (Weeks)</label>
-                <input type="number" value={weeks} onChange={(e) => setWeeks(e.target.value)} placeholder="e.g. 12" className="w-full p-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" />
-                <p className="text-xs text-gray-400 mt-2">Safe weight change is ~0.5kg per week.</p>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1 mb-2 block">Timeframe (Weeks)</label>
+                <input 
+                  type="number" 
+                  value={weeks} 
+                  onChange={(e) => setWeeks(e.target.value)} 
+                  placeholder="12" 
+                  className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-black text-2xl text-white placeholder-slate-700 focus:border-blue-500 outline-none transition-all" 
+                />
+                <p className="text-[10px] font-bold text-slate-600 mt-2 ml-1">
+                  RECOMMENDED: ~0.5kg change per week
+                </p>
               </div>
             </div>
             
-            <div className="flex gap-3 mt-10">
-              <button onClick={() => setStep(2)} className="px-6 bg-gray-200 text-gray-800 font-bold py-4 rounded-xl hover:bg-gray-300 transition-all">Back</button>
-              <button onClick={calculateAndSave} disabled={loading || !targetWeight || !weeks} className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50">
-                {loading ? 'Crunching Macros...' : 'Generate Meal Plan'}
+            <div className="flex gap-4 mt-10">
+              <button onClick={() => setStep(2)} className="px-6 bg-slate-800 text-slate-400 font-bold py-4 rounded-xl hover:bg-slate-700 transition-all uppercase text-xs tracking-wider">Back</button>
+              <button 
+                onClick={calculateAndSave} 
+                disabled={loading || !targetWeight || !weeks} 
+                className="flex-1 bg-blue-600 text-white font-black uppercase tracking-widest py-4 rounded-xl hover:bg-blue-500 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_30px_rgba(37,99,235,0.4)]"
+              >
+                {loading ? 'CALCULATING...' : 'INITIATE PLAN'}
               </button>
             </div>
           </div>
