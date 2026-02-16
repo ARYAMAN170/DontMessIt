@@ -90,7 +90,7 @@ export default function App() {
 
     initSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: any, session: any) => {
       console.log("App: Auth state change:", event);
       if (isMounted) {
         setSession(session);
@@ -110,7 +110,7 @@ export default function App() {
     console.log("App: Checking profile execution for user", userId);
     
     // Helper to timeout the specific request - Increased to 6s
-    const racePromise = new Promise<{ data: any; error: any }>((resolve, reject) => {
+    const racePromise = new Promise<{ data: any; error: any }>((_, reject) => {
       setTimeout(() => reject(new Error("Profile check request timed out")), 6000);
     });
 
@@ -188,13 +188,13 @@ export default function App() {
   if (!session) return <Auth />;
   if (needsOnboarding) return <Onboarding session={session} onComplete={() => setNeedsOnboarding(false)} />;
 
-  return <DontMessItDashboard session={session} />;
+  return <DontMessItDashboard />;
 }
 
 // ==========================================
 // 2. THE DASHBOARD COMPONENT (THE ACTUAL APP)
 // ==========================================
-function DontMessItDashboard({ session }: { session: any }) {
+function DontMessItDashboard() {
   const [mealsOfDay, setMealsOfDay] = useState<DailyMenu[]>([]);
   const [foodDictionary, setFoodDictionary] = useState<FoodItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -205,17 +205,12 @@ function DontMessItDashboard({ session }: { session: any }) {
   const [dailyProteinGoal, setDailyProteinGoal] = useState<number>(() => Number(localStorage.getItem('dontmessit_protein')) || 140);
   const [dailyCalorieGoal, setDailyCalorieGoal] = useState<number>(() => Number(localStorage.getItem('dontmessit_calories')) || 2800);
   const [selectedMess, setSelectedMess] = useState(() => localStorage.getItem('dontmessit_mess') || 'men-spc');
-  const [userGoal, setUserGoal] = useState<'gain_weight' | 'lose_weight'>(() => {
+  const [userGoal] = useState<'gain_weight' | 'lose_weight'>(() => {
     return (localStorage.getItem('dontmessit_goal') as 'gain_weight' | 'lose_weight') || 'gain_weight';
   });
 
   // --- DATE NAVIGATION STATE ---
   const [selectedDate, setSelectedDate] = useState(new Date());
-
-  const toggleGoal = (goal: 'gain_weight' | 'lose_weight') => {
-    setUserGoal(goal);
-    localStorage.setItem('dontmessit_goal', goal);
-  };
 
   const formatDateForDB = (date: Date) => {
     return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
