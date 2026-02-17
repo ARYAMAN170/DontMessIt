@@ -1,8 +1,44 @@
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
+import { useQuery } from '@tanstack/react-query';
+import { ErrorBoundary } from 'react-error-boundary';
 import Auth from './Auth';
 import Onboarding from './Onboarding';
 import './App.css';
+
+// --- SKELETON LOADER COMPONENT ---
+function MenuSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+       {[1, 2, 3, 4].map((i) => (
+         <div key={i} className="glass-card rounded-3xl overflow-hidden border border-white/5 bg-slate-800/50">
+            <div className="h-16 bg-slate-700/30 border-b border-white/5"></div>
+            <div className="p-4 space-y-4">
+              <div className="h-20 bg-slate-700/20 rounded-xl"></div>
+              <div className="space-y-2">
+                <div className="h-8 bg-slate-700/20 rounded-lg w-full"></div>
+                <div className="h-8 bg-slate-700/20 rounded-lg w-3/4"></div>
+              </div>
+            </div>
+         </div>
+       ))}
+    </div>
+  );
+}
+
+// --- ERROR FALLBACK COMPONENT ---
+function ErrorFallback({ error, resetErrorBoundary }: { error: any, resetErrorBoundary: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center p-8 text-center space-y-4">
+      <div className="text-4xl">⚠️</div>
+      <h3 className="text-xl font-bold text-white">Something went wrong</h3>
+      <p className="text-slate-400 text-sm">{error.message}</p>
+      <button onClick={resetErrorBoundary} className="px-4 py-2 bg-blue-600 rounded-lg text-white font-bold text-sm">
+        Try Again
+      </button>
+    </div>
+  );
+}
 
 // --- TYPESCRIPT INTERFACES ---
 interface OptimizedPlateItem {
@@ -189,16 +225,17 @@ export default function App() {
   if (!session) return <Auth />;
   if (needsOnboarding) return <Onboarding session={session} onComplete={() => setNeedsOnboarding(false)} />;
 
-  return <DontMessItDashboard />;
+  return (
+    <ErrorBoundary FallbackComponent={ErrorFallback} onReset={() => window.location.reload()}>
+      <DontMessItDashboard />
+    </ErrorBoundary>
+  );
 }
 
 // ==========================================
 // 2. THE DASHBOARD COMPONENT (THE ACTUAL APP)
 // ==========================================
 function DontMessItDashboard() {
-  const [mealsOfDay, setMealsOfDay] = useState<DailyMenu[]>([]);
-  const [foodDictionary, setFoodDictionary] = useState<FoodItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [currentMealType, setCurrentMealType] = useState<number>(1);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -206,6 +243,7 @@ function DontMessItDashboard() {
   const [dailyProteinGoal, setDailyProteinGoal] = useState<number>(() => Number(localStorage.getItem('dontmessit_protein')) || 140);
   const [dailyCalorieGoal, setDailyCalorieGoal] = useState<number>(() => Number(localStorage.getItem('dontmessit_calories')) || 2800);
   const [selectedMess, setSelectedMess] = useState(() => localStorage.getItem('dontmessit_mess') || 'men-spc');
+  const [expandedMenuId, setExpandedMenuId] = useState<number | null>(null);
   const [userGoal] = useState<'gain_weight' | 'lose_weight'>(() => {
     return (localStorage.getItem('dontmessit_goal') as 'gain_weight' | 'lose_weight') || 'gain_weight';
   });
@@ -262,30 +300,45 @@ function DontMessItDashboard() {
     }
   };
 
-  useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      const hour = new Date().getHours();
-      const mealType = hour < 10 ? 1 : hour < 15 ? 2 : hour < 18 ? 3 : 4;
-      setCurrentMealType(mealType);
+  // --- REACT QUERY FETCHING ---
+  
+  // 1. Food Dictionary (Long Cache)
+  const { data: foodDictionary = [] } = useQuery({
+    queryKey: ['foodDictionary'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('food_dictionary').select('*');
+      if (error) throw error;
+      return data as FoodItem[];
+    },
+    staleTime: 1000 * 60 * 60 * 24, // 24h
+  });
+
+  // 2. Daily Menus (Short Cache)
+  const targetDateStr = formatDateForDB(selectedDate);
+  
+  const { data: mealsOfDay = [], isLoading: loadingMenu } = useQuery({
+    queryKey: ['dailyMenus', selectedMess, targetDateStr],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('daily_menus')
+        .select('*')
+        .eq('date', targetDateStr)
+        .eq('mess_id', selectedMess);
       
-      const targetDateStr = formatDateForDB(selectedDate);
+      if (error) throw error;
+      return data as DailyMenu[];
+    },
+    staleTime: 1000 * 60 * 30, // 30 mins
+  });
 
-      try {
-        const [menusResponse, dictResponse] = await Promise.all([
-          supabase.from('daily_menus').select('*').eq('date', targetDateStr).eq('mess_id', selectedMess),
-          supabase.from('food_dictionary').select('*')
-        ]);
+  const loading = loadingMenu && mealsOfDay.length === 0;
 
-        setMealsOfDay(menusResponse.data || []);
-        if (dictResponse.data) setFoodDictionary(dictResponse.data);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-      }
-      setLoading(false);
-    }
-    fetchData();
-  }, [selectedMess, selectedDate]);
+  // Set current meal type on mount
+  useEffect(() => {
+    const hour = new Date().getHours();
+    const mealType = hour < 10 ? 1 : hour < 15 ? 2 : hour < 18 ? 3 : 4;
+    setCurrentMealType(mealType);
+  }, []);
 
   // --- THE THALI ENGINE ---
   // --- THE UPGRADED TWO-STAGE THALI ENGINE ---
@@ -418,49 +471,33 @@ function DontMessItDashboard() {
   return (
     <div className="max-w-md mx-auto min-h-screen pb-20 pt-6 px-4">
       
-      {/* UPDATE: Header & Settings */}
-      <header className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight text-white mb-1">
-            Mess Menu
-          </h1>
-          <div className="flex items-center gap-2">
+      {/* UPDATE: Compact Header with Date */}
+      <div className="glass-panel rounded-2xl p-2 flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3 pl-2">
             <select 
               value={selectedMess} 
               onChange={(e) => { setSelectedMess(e.target.value); localStorage.setItem('dontmessit_mess', e.target.value); }} 
-              className="appearance-none bg-slate-800 text-slate-300 text-xs font-bold py-1 px-3 rounded-full border border-slate-700 outline-none focus:border-blue-500"
+              className="appearance-none bg-transparent text-white text-sm font-black uppercase tracking-tight outline-none"
             >
-              {MESS_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+              {MESS_OPTIONS.map((o) => <option key={o.id} value={o.id} className="text-black">{o.label}</option>)}
             </select>
-          </div>
+            <div className="h-4 w-px bg-white/20"></div>
+            <div className="flex items-center gap-1">
+               <button onClick={() => changeDate(-1)} className="p-1 text-slate-400 hover:text-white"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+               <span className="text-xs font-bold text-slate-300 min-w-[80px] text-center">{formatUI_Date(selectedDate) === "Today" ? "Today" : selectedDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+               <button onClick={() => changeDate(1)} className="p-1 text-slate-400 hover:text-white"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></button>
+            </div>
         </div>
-        <button onClick={() => setShowSettings(!showSettings)} className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 active:scale-95 transition-all">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-slate-300">
+        
+        <button onClick={() => setShowSettings(!showSettings)} className="w-8 h-8 rounded-full bg-slate-800/50 flex items-center justify-center border border-slate-700/50 active:scale-95 transition-all">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-slate-300">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
           </svg>
-        </button>
-      </header>
-
-      {/* UPDATE: Date Navigator (Glass Style) */}
-      <div className="glass-panel rounded-2xl p-1 flex items-center justify-between mb-8">
-        <button onClick={() => changeDate(-1)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/5 active:scale-95 text-slate-400">
-           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-        </button>
-        <div className="flex flex-col items-center">
-          <span className="text-xs font-black uppercase tracking-widest text-slate-500">
-            {formatUI_Date(selectedDate) === "Today" ? "Today's Plan" : "Viewing"}
-          </span>
-          <span className="text-sm font-bold text-white">
-            {selectedDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', weekday: 'short' })}
-          </span>
-        </div>
-        <button onClick={() => changeDate(1)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/5 active:scale-95 text-slate-400">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
         </button>
       </div>
 
       {showSettings && (
-        <div className="glass-panel p-5 rounded-2xl mb-8 animate-fade-in-up flex flex-col gap-4">
+        <div className="glass-panel p-5 rounded-2xl mb-6 animate-fade-in-up flex flex-col gap-4">
           
           {/* Option 1: Update Intake */}
           <details className="group">
@@ -495,11 +532,8 @@ function DontMessItDashboard() {
 
       {/* MAIN CONTENT AREA */}
       <main className="space-y-6">
-        {loading ? (
-             <div className="flex flex-col items-center justify-center p-10 space-y-4">
-               <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-               <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Crunching Macros...</p>
-             </div>
+        {loading || !foodDictionary.length ? (
+             <MenuSkeleton />
         ) : (
           sortedMeals.map((meal) => {
             const isCurrent = meal.meal_type === currentMealType;
@@ -510,7 +544,7 @@ function DontMessItDashboard() {
               .filter((item): item is FoodItem => item !== undefined);
 
             const availableProteins = matchedItems
-              .filter(i => i.protein_per_serving >= 4)
+              .filter(i => i.category === 'protein_main')
               .sort((a,b) => b.protein_per_serving - a.protein_per_serving);
 
             const customPlate = buildPersonalizedPlate(meal.raw_items, meal.meal_type);
@@ -525,126 +559,131 @@ function DontMessItDashboard() {
             const primaryColor = userGoal === 'gain_weight' ? 'blue' : 'orange';
 
             return (
-              <div key={meal.meal_type} className={`relative glass-card rounded-3xl overflow-hidden transition-all duration-500 border border-white/5 shadow-2xl backdrop-blur-2xl ${isCurrent ? `ring-1 ring-${primaryColor}-500/50 shadow-[0_0_40px_rgba(59,130,246,0.15)] opacity-100 scale-[1.02]` : 'opacity-60 scale-95 grayscale-[0.3]'}`}>
+              <div key={meal.meal_type} className={`relative glass-card rounded-3xl overflow-hidden transition-all duration-300 border border-white/5 shadow-xl ${isCurrent ? `ring-1 ring-${primaryColor}-500/50 opacity-100` : 'opacity-80 grayscale-[0.2]'}`}>
                 
                 {/* Glossy Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none"></div>
 
                 {/* CARD HEADER */}
-                <div className="p-6 flex justify-between items-center relative z-10 border-b border-white/5 bg-black/20">
+                <div className="p-4 flex justify-between items-center relative z-10 border-b border-white/5 bg-black/20">
                   <div>
-                    <h2 className="text-2xl font-black italic uppercase text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">{getMealName(meal.meal_type)}</h2>
-                    <p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isCurrent ? `text-${primaryColor}-400` : 'text-slate-500'}`}>
-                      {getMessTimeDisplay(meal.meal_type, selectedDate)}
-                    </p>
+                    <h2 className="text-xl font-black italic uppercase text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">{getMealName(meal.meal_type)}</h2>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{getMessTimeDisplay(meal.meal_type, selectedDate)}</p>
                   </div>
                   <div className="flex gap-2">
-                    <div className={`px-3 py-2 rounded-xl border border-${primaryColor}-500/20 bg-${primaryColor}-500/10 backdrop-blur-md`}>
-                      <span className={`text-xl font-black text-${primaryColor}-400`}>{customPlate.total_estimated_calories}</span>
-                      <span className={`text-[8px] font-bold ml-1 text-${primaryColor}-300 uppercase`}>KCAL</span>
+                    <div className="flex items-center gap-1">
+                      <span className={`text-base font-black text-${primaryColor}-400`}>{customPlate.total_estimated_calories}</span>
+                      <span className={`text-[8px] font-bold text-${primaryColor}-300 uppercase`}>KCAL</span>
                     </div>
-                    <div className={`px-3 py-2 rounded-xl border border-${primaryColor}-500/20 bg-${primaryColor}-500/10 backdrop-blur-md shadow-[0_0_15px_rgba(59,130,246,0.1)]`}>
-                      <span className={`text-xl font-black text-${primaryColor}-400`}>+{customPlate.total_estimated_protein}</span>
-                      <span className={`text-[8px] font-bold ml-1 text-${primaryColor}-300`}>g PRO</span>
+                    <div className="w-px h-4 bg-white/10"></div>
+                    <div className="flex items-center gap-1">
+                      <span className={`text-base font-black text-${primaryColor}-400`}>+{customPlate.total_estimated_protein}</span>
+                      <span className={`text-[8px] font-bold text-${primaryColor}-300`}>PRO</span>
                     </div>
                   </div>
                 </div>
 
                 {/* SECTION 1: PROTEIN HITTERS (SCROLLABLE ROW) */}
                 {availableProteins.length > 0 && (
-                  <div className="px-6 py-4 overflow-x-auto whitespace-nowrap scrollbar-hide border-b border-white/5 bg-white/[0.02] overscroll-x-contain touch-pan-x hover:scrollbar-default transition-all">
-                    <div className="flex gap-3">
+                  <div className="px-4 py-3 overflow-x-auto whitespace-nowrap scrollbar-hide border-b border-white/5 bg-white/[0.02] overscroll-x-contain touch-pan-x hover:scrollbar-default transition-all">
+                    <div className="flex gap-2">
                       {availableProteins.map((p, idx) => (
-                        <div key={idx} className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-${primaryColor}-500/30 bg-${primaryColor}-500/5 backdrop-blur-sm`}>
+                        <div key={idx} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-${primaryColor}-500/30 bg-${primaryColor}-500/5 backdrop-blur-sm`}>
                           <span className="text-[10px]">🔥</span>
-                          <span className={`text-xs font-bold text-${primaryColor}-100 uppercase tracking-wide`}>{p.item_name}</span>
-                          <span className={`text-xs font-black text-${primaryColor}-400`}>{p.calories_per_serving} kcal</span>
+                          <span className={`text-[10px] font-bold text-${primaryColor}-100 uppercase tracking-wide`}>{p.item_name}</span>
+                          <span className={`text-[10px] font-black text-${primaryColor}-400`}>{p.protein_per_serving}g</span>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
                 
-                <div className="p-6 space-y-8 relative z-10">
+                <div className="p-4 space-y-4 relative z-10">
                   
                   {/* STRATEGY BOX (Context Aware) with Premium Gradient */}
                   {isCurrent && (
-                    <div className={`p-5 rounded-2xl border relative overflow-hidden group ${userGoal === 'gain_weight' ? 'bg-gradient-to-br from-blue-900/40 to-slate-900/40 border-blue-500/20' : 'bg-gradient-to-br from-orange-900/40 to-slate-900/40 border-orange-500/20'}`}>
+                    <div className={`p-3 rounded-xl border relative overflow-hidden group ${userGoal === 'gain_weight' ? 'bg-gradient-to-br from-blue-900/40 to-slate-900/40 border-blue-500/20' : 'bg-gradient-to-br from-orange-900/40 to-slate-900/40 border-orange-500/20'}`}>
                       <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${userGoal === 'gain_weight' ? 'from-blue-500 to-transparent' : 'from-orange-500 to-transparent'}`}></div>
-                      <div className="relative z-10">
-                        <h3 className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 flex items-center gap-2 ${userGoal === 'gain_weight' ? 'text-blue-400' : 'text-orange-400'}`}>
-                          {userGoal === 'gain_weight' ? '⚡ BULK STRATEGY' : '🔥 CUT STRATEGY'}
-                        </h3>
-                        <p className="text-sm font-medium leading-relaxed text-slate-200">
-                        {(() => {
-                          const availableFillers = matchedItems.filter(i => i.category === 'healthy_extra' || i.category === 'side').map(i => i.item_name);
-                          const availableDense = matchedItems.filter(i => i.category === 'carb_main' && i.calories_per_serving > 150).map(i => i.item_name);
-                          const primaryProtein = availableProteins[0]?.item_name || 'the main protein';
+                      <div className="relative z-10 flex items-start gap-2">
+                        <div className="flex-1">
+                          <h3 className={`text-[9px] font-black uppercase tracking-wider mb-1 flex items-center gap-1.5 ${userGoal === 'gain_weight' ? 'text-blue-400' : 'text-orange-400'}`}>
+                            {userGoal === 'gain_weight' ? '⚡ BULK STRATEGY' : '🔥 CUT STRATEGY'}
+                          </h3>
+                          <p className="text-xs font-medium leading-relaxed text-slate-300">
+                          {(() => {
+                            const availableFillers = matchedItems.filter(i => i.category === 'healthy_extra' || i.category === 'side').map(i => i.item_name);
+                            const availableDense = matchedItems.filter(i => i.category === 'carb_main' && i.calories_per_serving > 150).map(i => i.item_name);
+                            const primaryProtein = availableProteins[0]?.item_name || 'the main protein';
 
-                          if (userGoal === 'gain_weight') {
-                            let text = `Prioritize ${primaryProtein} first. `;
-                            if (availableDense.length > 0) text += `Double up on ${availableDense[0]} for easy mass. `;
-                            else text += `Use Milk/Curd to hit your calorie targets easily. `;
-                            return text;
-                          } else {
-                            let text = `Focus heavily on ${primaryProtein}. `;
-                            if (availableFillers.length > 0) text += `Load your plate with ${availableFillers[0]} for volume. `;
-                            if (availableDense.length > 0) text += `Skip the ${availableDense[0]} completely to save calories.`;
-                            else text += `Drink 500ml water before eating to manage appetite.`;
-                            return text;
-                          }
-                        })()}
-                        </p>
+                            if (userGoal === 'gain_weight') {
+                              let text = `Prioritize ${primaryProtein}. `;
+                              if (availableDense.length > 0) text += `Double ${availableDense[0]}. `;
+                              else text += `Add Milk/Curd. `;
+                              return text;
+                            } else {
+                              let text = `Focus on ${primaryProtein}. `;
+                              if (availableFillers.length > 0) text += `Add ${availableFillers[0]}. `;
+                              if (availableDense.length > 0) text += `Skip ${availableDense[0]}.`;
+                              else text += `Drink water first.`;
+                              return text;
+                            }
+                          })()}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   )}
 
                   {/* AI PLATE */}
                   <div>
-                    <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.25em] mb-5 flex items-center gap-4">
+                    <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-4">
                        PLATE BLUEPRINT
                        <div className="h-px bg-gradient-to-r from-slate-800 to-transparent flex-1"></div>
                     </h3>
                     
-                    <div className="space-y-4">
+                    <div className="space-y-2">
                       {[
                          ...grouped.protein.map(i => ({...i, type: 'prot'})),
                          ...grouped.carb.map(i => ({...i, type: 'carb'})),
                          ...grouped.filler.map(i => ({...i, type: 'fill'})),
                          ...grouped.extra.map(i => ({...i, type: 'extra'}))
                       ].map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center group">
-                          <div className="flex items-center gap-4">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shadow-lg ${
-                              item.type === 'prot' ? 'bg-green-500/10 text-green-400 border border-green-500/20 shadow-green-900/20' :
-                              item.type === 'carb' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-orange-900/20' :
+                        <div key={idx} className="flex justify-between items-center group py-1">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs shadow-md ${
+                              item.type === 'prot' ? 'bg-green-500/10 text-green-400 border border-green-500/20 shadow-green-900/10' :
+                              item.type === 'carb' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-orange-900/10' :
                               'bg-slate-800/50 text-slate-400 border border-slate-700/50'
                             }`}>
                               {item.servings}x
                             </div>
                             <div>
-                              <p className="text-sm font-bold text-slate-200 group-hover:text-white transition-colors tracking-wide">{item.item}</p>
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                {item.type === 'prot' ? 'High Protein' : item.type === 'carb' ? 'Carb Source' : 'Volume / Side'}
+                              <p className="text-sm font-bold text-slate-200 leading-tight">{item.item}</p>
+                              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mt-0.5">
+                                {item.type === 'prot' ? 'Protein' : item.type === 'carb' ? 'Carb' : 'Side'}
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-500 bg-white/5 py-1 px-2 rounded-md border border-white/5">{Math.round(item.calories)} kcal</span>
-                            <span className="text-xs font-bold text-slate-500 bg-white/5 py-1 px-2 rounded-md border border-white/5">{item.protein}g</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-slate-500 bg-white/5 py-0.5 px-1.5 rounded border border-white/5">{Math.round(item.calories)}</span>
+                            <span className="text-[10px] font-bold text-slate-500 bg-white/5 py-0.5 px-1.5 rounded border border-white/5">{item.protein}g</span>
                           </div>
                         </div>
 
                       ))}
                     </div>
                   </div>
-
-                  {/* SECTION 2: FULL RAW MENU (RESTORED) */}
-                  <div className="pt-6 border-t border-white/5">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Full Menu</p>
-                    <p className="text-xs font-medium text-slate-400 leading-6 tracking-wide opacity-80">
-                      {meal.raw_items.join(' • ')}
-                    </p>
+                  
+                  {/* Minimal Full Menu List */}
+                  <div className="pt-3 border-t border-white/5">
+                     <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">FULL MENU</p>
+                     <div className="text-xs text-slate-400 font-medium leading-relaxed">
+                        {meal.raw_items.map((item, i) => (
+                          <span key={i}>
+                            {item}{i < meal.raw_items.length - 1 ? " • " : ""}
+                          </span>
+                        ))}
+                     </div>
                   </div>
 
                 </div>

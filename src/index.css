@@ -26,17 +26,21 @@ h1, h2, h3, h4, h5, h6, .uppercase, button {
   letter-spacing: 0.05em; /* Slightly tighter/wider depending on preference */
 }
 
-/* Glassmorphism Utilities */
+/* Glassmorphism Utilities - Optimized for Mobile Performance */
 .glass-panel {
-  background: rgba(30, 41, 59, 0.7); /* Slate 800 with opacity */
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(30, 41, 59, 0.9); /* More opaque (Slate 800) */
+  backdrop-filter: blur(8px); /* Reduced blur */
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .glass-card {
-  background: rgba(51, 65, 85, 0.4); /* Slate 700 with opacity */
+  background: rgba(30, 41, 59, 0.85); /* More opaque */
+  backdrop-filter: blur(8px); /* Reduced blur from 40px/20px */
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.05);
+  transform: translateZ(0); /* Trigger GPU */
+  will-change: transform;
 }
 
 /* Custom Scrollbar for sleek look */
