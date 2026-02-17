@@ -513,7 +513,7 @@ function DontMessItDashboard() {
               .filter(i => i.protein_per_serving >= 4)
               .sort((a,b) => b.protein_per_serving - a.protein_per_serving);
 
-            const customPlate = buildPersonalizedPlate(meal.raw_items);
+            const customPlate = buildPersonalizedPlate(meal.raw_items, meal.meal_type);
 
             const grouped = {
               carb: customPlate.recommendations.filter(i => i.category === 'carb_main'),
