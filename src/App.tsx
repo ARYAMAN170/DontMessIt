@@ -243,7 +243,6 @@ function DontMessItDashboard() {
   const [dailyProteinGoal, setDailyProteinGoal] = useState<number>(() => Number(localStorage.getItem('dontmessit_protein')) || 140);
   const [dailyCalorieGoal, setDailyCalorieGoal] = useState<number>(() => Number(localStorage.getItem('dontmessit_calories')) || 2800);
   const [selectedMess, setSelectedMess] = useState(() => localStorage.getItem('dontmessit_mess') || 'men-spc');
-  const [expandedMenuId, setExpandedMenuId] = useState<number | null>(null);
   const [userGoal] = useState<'gain_weight' | 'lose_weight'>(() => {
     return (localStorage.getItem('dontmessit_goal') as 'gain_weight' | 'lose_weight') || 'gain_weight';
   });
