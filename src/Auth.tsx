@@ -35,12 +35,12 @@ export default function Auth() {
       <div className="absolute top-[-10%] right-[-5%] w-64 h-64 bg-blue-600/20 rounded-full blur-3xl pointer-events-none"></div>
       <div className="absolute bottom-[-10%] left-[-5%] w-64 h-64 bg-orange-600/20 rounded-full blur-3xl pointer-events-none"></div>
 
-      <div className="glass-panel p-8 rounded-3xl max-w-sm w-full border border-white/10 relative z-10 backdrop-blur-xl bg-black/40 shadow-2xl">
-        <div className="text-center mb-10">
-          <h1 className="text-5xl font-black italic tracking-tighter mb-2 bg-gradient-to-r from-blue-400 to-white bg-clip-text text-transparent transform -skew-x-12">
+      <div className="glass-panel p-6 sm:p-8 rounded-3xl max-w-[320px] sm:max-w-sm w-full border border-white/10 relative z-10 backdrop-blur-xl bg-black/40 shadow-2xl mx-auto">
+        <div className="text-center mb-8 sm:mb-10">
+          <h1 className="text-3xl sm:text-5xl font-black italic tracking-tighter mb-2 bg-gradient-to-r from-blue-400 to-white bg-clip-text text-transparent transform -skew-x-12 break-words leading-tight">
             DONTMESSIT
           </h1>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.3em]">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] sm:tracking-[0.3em]">
             Campus Performance Nutrition
           </p>
         </div>

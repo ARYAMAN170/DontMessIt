@@ -4,6 +4,11 @@
   color-scheme: dark;
 }
 
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
 body {
   background-color: #000000; /* Pure Black Base */
   background-image: 

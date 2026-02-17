@@ -552,7 +552,7 @@ function DontMessItDashboard() {
 
                 {/* SECTION 1: PROTEIN HITTERS (SCROLLABLE ROW) */}
                 {availableProteins.length > 0 && (
-                  <div className="px-6 py-4 overflow-x-auto whitespace-nowrap scrollbar-hide border-b border-white/5 bg-white/[0.02]">
+                  <div className="px-6 py-4 overflow-x-auto whitespace-nowrap scrollbar-hide border-b border-white/5 bg-white/[0.02] overscroll-x-contain touch-pan-x hover:scrollbar-default transition-all">
                     <div className="flex gap-3">
                       {availableProteins.map((p, idx) => (
                         <div key={idx} className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-${primaryColor}-500/30 bg-${primaryColor}-500/5 backdrop-blur-sm`}>
