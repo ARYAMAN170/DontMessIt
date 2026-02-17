@@ -10,6 +10,7 @@ interface OptimizedPlateItem {
   servings: number;
   unit: string;
   protein: number;
+  calories: number;
   is_limited: boolean;
   category: string;
 }
@@ -244,6 +245,23 @@ function DontMessItDashboard() {
     }
   };
 
+  const getMessTimeDisplay = (mealType: number, date: Date) => {
+    const isWeekend = date.getDay() === 0 || date.getDay() === 6; // 0=Sun, 6=Sat
+    
+    switch(mealType) {
+      case 1: // Breakfast
+        return isWeekend ? "7:30 - 9:30 AM" : "7:00 - 9:00 AM";
+      case 2: // Lunch
+        return "12:30 - 2:30 PM";
+      case 3: // Snacks
+        return "4:30 - 6:15 PM";
+      case 4: // Dinner
+        return "7:00 - 9:00 PM";
+      default:
+        return "";
+    }
+  };
+
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -275,6 +293,7 @@ function DontMessItDashboard() {
     const targetMealProtein = dailyProteinGoal / 4; 
     let currentProtein = 0;
     let totalLiquidServings = 0; 
+    let totalCalories = 0;
     const MAX_LIQUIDS_PER_MEAL = 2; 
 
     const plateMap = new Map<string, OptimizedPlateItem>();
@@ -303,17 +322,21 @@ function DontMessItDashboard() {
       if (item.category === 'liquid_side') totalLiquidServings += canAdd;
 
       const pYield = item.protein_per_serving * canAdd;
+      const cYield = item.calories_per_serving * canAdd;
+
       if (plateMap.has(item.item_name)) {
         const entry = plateMap.get(item.item_name)!;
         entry.servings += canAdd;
         entry.protein = Number((entry.protein + pYield).toFixed(1));
+        entry.calories = Math.round(entry.calories + cYield);
       } else {
         plateMap.set(item.item_name, {
           item: item.item_name, servings: canAdd, unit: item.serving_unit,
-          protein: Number(pYield.toFixed(1)), is_limited: item.is_limited, category: item.category
+          protein: Number(pYield.toFixed(1)), calories: Math.round(cYield), is_limited: item.is_limited, category: item.category
         });
       }
       currentProtein += pYield;
+      totalCalories += cYield; // Track total calories
     };
 
     if (carbs.length > 0) addServing(carbs[0], 1);
@@ -348,7 +371,11 @@ function DontMessItDashboard() {
       });
     }
 
-    return { recommendations: Array.from(plateMap.values()), total_estimated_protein: Number(currentProtein.toFixed(1)) };
+    return { 
+      recommendations: Array.from(plateMap.values()), 
+      total_estimated_protein: Number(currentProtein.toFixed(1)),
+      total_estimated_calories: Math.round(totalCalories)
+    };
   };
 
   const sortedMeals = [...mealsOfDay].sort((a, b) => {
@@ -377,7 +404,9 @@ function DontMessItDashboard() {
           </div>
         </div>
         <button onClick={() => setShowSettings(!showSettings)} className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 active:scale-95 transition-all">
-          <span className="text-xl">⚙️</span>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-slate-300">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+          </svg>
         </button>
       </header>
 
@@ -400,21 +429,36 @@ function DontMessItDashboard() {
       </div>
 
       {showSettings && (
-        <div className="glass-panel p-5 rounded-2xl mb-8 animate-fade-in-up">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-white">Manual Targets</h3>
-            <button onClick={() => supabase.auth.signOut()} className="text-[10px] font-bold text-red-400 bg-red-900/20 px-3 py-1.5 rounded-lg border border-red-900/50">LOGOUT</button>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Protein (g)</label>
-              <input type="number" value={dailyProteinGoal} onChange={(e) => { setDailyProteinGoal(Number(e.target.value)); localStorage.setItem('dontmessit_protein', e.target.value); }} className="w-full bg-slate-900 border border-slate-700 text-white p-3 rounded-xl font-bold focus:border-blue-500 outline-none" />
+        <div className="glass-panel p-5 rounded-2xl mb-8 animate-fade-in-up flex flex-col gap-4">
+          
+          {/* Option 1: Update Intake */}
+          <details className="group">
+            <summary className="flex justify-between items-center cursor-pointer list-none text-white font-bold mb-2">
+              <span>Update Intake</span>
+              <span className="transition group-open:rotate-180">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                </svg>
+              </span>
+            </summary>
+            <div className="grid grid-cols-2 gap-4 mt-2 mb-2 p-2 bg-black/20 rounded-xl">
+              <div>
+                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Protein (g)</label>
+                <input type="number" value={dailyProteinGoal} onChange={(e) => { setDailyProteinGoal(Number(e.target.value)); localStorage.setItem('dontmessit_protein', e.target.value); }} className="w-full bg-slate-900 border border-slate-700 text-white p-3 rounded-xl font-bold focus:border-blue-500 outline-none" />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Calories</label>
+                <input type="number" value={dailyCalorieGoal} onChange={(e) => { setDailyCalorieGoal(Number(e.target.value)); localStorage.setItem('dontmessit_calories', e.target.value); }} className="w-full bg-slate-900 border border-slate-700 text-white p-3 rounded-xl font-bold focus:border-blue-500 outline-none" />
+              </div>
             </div>
-            <div>
-              <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Calories</label>
-              <input type="number" value={dailyCalorieGoal} onChange={(e) => { setDailyCalorieGoal(Number(e.target.value)); localStorage.setItem('dontmessit_calories', e.target.value); }} className="w-full bg-slate-900 border border-slate-700 text-white p-3 rounded-xl font-bold focus:border-blue-500 outline-none" />
-            </div>
-          </div>
+          </details>
+
+          <div className="h-px bg-white/5 w-full"></div>
+
+          {/* Option 2: Logout (At Bottom) */}
+          <button onClick={() => supabase.auth.signOut()} className="w-full text-center text-xs font-bold text-red-400 bg-red-900/10 hover:bg-red-900/20 py-3 rounded-xl border border-red-900/30 transition-colors">
+            LOGOUT
+          </button>
         </div>
       )}
 
@@ -460,12 +504,18 @@ function DontMessItDashboard() {
                   <div>
                     <h2 className="text-2xl font-black italic uppercase text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">{getMealName(meal.meal_type)}</h2>
                     <p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isCurrent ? `text-${primaryColor}-400` : 'text-slate-500'}`}>
-                      {isCurrent ? 'Current Session' : 'Up Next'}
+                      {getMessTimeDisplay(meal.meal_type, selectedDate)}
                     </p>
                   </div>
-                  <div className={`px-4 py-2 rounded-xl border border-${primaryColor}-500/20 bg-${primaryColor}-500/10 backdrop-blur-md shadow-[0_0_15px_rgba(59,130,246,0.1)]`}>
-                    <span className={`text-2xl font-black text-${primaryColor}-400`}>+{customPlate.total_estimated_protein}</span>
-                    <span className={`text-[10px] font-bold ml-1 text-${primaryColor}-300`}>g PRO</span>
+                  <div className="flex gap-2">
+                    <div className={`px-3 py-2 rounded-xl border border-${primaryColor}-500/20 bg-${primaryColor}-500/10 backdrop-blur-md`}>
+                      <span className={`text-xl font-black text-${primaryColor}-400`}>{customPlate.total_estimated_calories}</span>
+                      <span className={`text-[8px] font-bold ml-1 text-${primaryColor}-300 uppercase`}>KCAL</span>
+                    </div>
+                    <div className={`px-3 py-2 rounded-xl border border-${primaryColor}-500/20 bg-${primaryColor}-500/10 backdrop-blur-md shadow-[0_0_15px_rgba(59,130,246,0.1)]`}>
+                      <span className={`text-xl font-black text-${primaryColor}-400`}>+{customPlate.total_estimated_protein}</span>
+                      <span className={`text-[8px] font-bold ml-1 text-${primaryColor}-300`}>g PRO</span>
+                    </div>
                   </div>
                 </div>
 
@@ -477,7 +527,7 @@ function DontMessItDashboard() {
                         <div key={idx} className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-${primaryColor}-500/30 bg-${primaryColor}-500/5 backdrop-blur-sm`}>
                           <span className="text-[10px]">🔥</span>
                           <span className={`text-xs font-bold text-${primaryColor}-100 uppercase tracking-wide`}>{p.item_name}</span>
-                          <span className={`text-xs font-black text-${primaryColor}-400`}>{p.protein_per_serving}g</span>
+                          <span className={`text-xs font-black text-${primaryColor}-400`}>{p.calories_per_serving} kcal</span>
                         </div>
                       ))}
                     </div>
@@ -487,34 +537,36 @@ function DontMessItDashboard() {
                 <div className="p-6 space-y-8 relative z-10">
                   
                   {/* STRATEGY BOX (Context Aware) with Premium Gradient */}
-                  <div className={`p-5 rounded-2xl border relative overflow-hidden group ${userGoal === 'gain_weight' ? 'bg-gradient-to-br from-blue-900/40 to-slate-900/40 border-blue-500/20' : 'bg-gradient-to-br from-orange-900/40 to-slate-900/40 border-orange-500/20'}`}>
-                    <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${userGoal === 'gain_weight' ? 'from-blue-500 to-transparent' : 'from-orange-500 to-transparent'}`}></div>
-                    <div className="relative z-10">
-                      <h3 className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 flex items-center gap-2 ${userGoal === 'gain_weight' ? 'text-blue-400' : 'text-orange-400'}`}>
-                        {userGoal === 'gain_weight' ? '⚡ BULK STRATEGY' : '🔥 CUT STRATEGY'}
-                      </h3>
-                      <p className="text-sm font-medium leading-relaxed text-slate-200">
-                      {(() => {
-                        const availableFillers = matchedItems.filter(i => i.category === 'healthy_extra' || i.category === 'side').map(i => i.item_name);
-                        const availableDense = matchedItems.filter(i => i.category === 'carb_main' && i.calories_per_serving > 150).map(i => i.item_name);
-                        const primaryProtein = availableProteins[0]?.item_name || 'the main protein';
+                  {isCurrent && (
+                    <div className={`p-5 rounded-2xl border relative overflow-hidden group ${userGoal === 'gain_weight' ? 'bg-gradient-to-br from-blue-900/40 to-slate-900/40 border-blue-500/20' : 'bg-gradient-to-br from-orange-900/40 to-slate-900/40 border-orange-500/20'}`}>
+                      <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${userGoal === 'gain_weight' ? 'from-blue-500 to-transparent' : 'from-orange-500 to-transparent'}`}></div>
+                      <div className="relative z-10">
+                        <h3 className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 flex items-center gap-2 ${userGoal === 'gain_weight' ? 'text-blue-400' : 'text-orange-400'}`}>
+                          {userGoal === 'gain_weight' ? '⚡ BULK STRATEGY' : '🔥 CUT STRATEGY'}
+                        </h3>
+                        <p className="text-sm font-medium leading-relaxed text-slate-200">
+                        {(() => {
+                          const availableFillers = matchedItems.filter(i => i.category === 'healthy_extra' || i.category === 'side').map(i => i.item_name);
+                          const availableDense = matchedItems.filter(i => i.category === 'carb_main' && i.calories_per_serving > 150).map(i => i.item_name);
+                          const primaryProtein = availableProteins[0]?.item_name || 'the main protein';
 
-                        if (userGoal === 'gain_weight') {
-                          let text = `Prioritize ${primaryProtein} first. `;
-                          if (availableDense.length > 0) text += `Double up on ${availableDense[0]} for easy mass. `;
-                          else text += `Use Milk/Curd to hit your calorie targets easily. `;
-                          return text;
-                        } else {
-                          let text = `Focus heavily on ${primaryProtein}. `;
-                          if (availableFillers.length > 0) text += `Load your plate with ${availableFillers[0]} for volume. `;
-                          if (availableDense.length > 0) text += `Skip the ${availableDense[0]} completely to save calories.`;
-                          else text += `Drink 500ml water before eating to manage appetite.`;
-                          return text;
-                        }
-                      })()}
-                      </p>
+                          if (userGoal === 'gain_weight') {
+                            let text = `Prioritize ${primaryProtein} first. `;
+                            if (availableDense.length > 0) text += `Double up on ${availableDense[0]} for easy mass. `;
+                            else text += `Use Milk/Curd to hit your calorie targets easily. `;
+                            return text;
+                          } else {
+                            let text = `Focus heavily on ${primaryProtein}. `;
+                            if (availableFillers.length > 0) text += `Load your plate with ${availableFillers[0]} for volume. `;
+                            if (availableDense.length > 0) text += `Skip the ${availableDense[0]} completely to save calories.`;
+                            else text += `Drink 500ml water before eating to manage appetite.`;
+                            return text;
+                          }
+                        })()}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* AI PLATE */}
                   <div>
@@ -546,8 +598,12 @@ function DontMessItDashboard() {
                               </p>
                             </div>
                           </div>
-                          <span className="text-xs font-bold text-slate-500 bg-white/5 py-1 px-2 rounded-md border border-white/5">{item.protein}g</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-500 bg-white/5 py-1 px-2 rounded-md border border-white/5">{Math.round(item.calories)} kcal</span>
+                            <span className="text-xs font-bold text-slate-500 bg-white/5 py-1 px-2 rounded-md border border-white/5">{item.protein}g</span>
+                          </div>
                         </div>
+
                       ))}
                     </div>
                   </div>
