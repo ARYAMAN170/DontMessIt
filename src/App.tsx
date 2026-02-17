@@ -288,13 +288,31 @@ function DontMessItDashboard() {
   }, [selectedMess, selectedDate]);
 
   // --- THE THALI ENGINE ---
-  const buildPersonalizedPlate = (rawItems: string[]) => {
-    if (!foodDictionary.length) return { recommendations: [], total_estimated_protein: 0 };
-    const targetMealProtein = dailyProteinGoal / 4; 
+  // --- THE UPGRADED TWO-STAGE THALI ENGINE ---
+  // Notice we added 'mealType: number' as the second parameter!
+  const buildPersonalizedPlate = (rawItems: string[], mealType: number) => {
+    if (!foodDictionary.length) return { recommendations: [], total_estimated_protein: 0, total_estimated_calories: 0 };
+    
+    // --- SMART MACRO DISTRIBUTION ---
+    let targetMealProtein = 0;
+    let targetMealCalories = 0;
+
+    if (mealType === 3) { 
+      // SNACKS (Type 3): Hardcapped at 15g protein, and only 15% of daily calories
+      targetMealProtein = 15;
+      targetMealCalories = dailyCalorieGoal * 0.15; 
+    } else { 
+      // BREAKFAST, LUNCH, DINNER: Split the REMAINING protein and calories evenly across the 3 main meals
+      targetMealProtein = (dailyProteinGoal - 15) / 3;
+      targetMealCalories = (dailyCalorieGoal * 0.85) / 3; 
+    }
+    
     let currentProtein = 0;
     let totalLiquidServings = 0; 
     let totalCalories = 0;
     const MAX_LIQUIDS_PER_MEAL = 2; 
+
+    // ... (The rest of the plateMap, sorting, and addServing logic stays exactly the same) ...
 
     const plateMap = new Map<string, OptimizedPlateItem>();
 
@@ -336,10 +354,12 @@ function DontMessItDashboard() {
         });
       }
       currentProtein += pYield;
-      totalCalories += cYield; // Track total calories
+      totalCalories += cYield; 
     };
 
-    if (carbs.length > 0) addServing(carbs[0], 1);
+    // STAGE 1: THE PROTEIN FOUNDATION
+    if (carbs.length > 0) addServing(carbs[0], 1); // Secure 1 base carb
+    
     proteins.forEach(p => {
       if (currentProtein < targetMealProtein) {
         const needed = targetMealProtein - currentProtein;
@@ -347,27 +367,38 @@ function DontMessItDashboard() {
       }
     });
 
-    if (currentProtein < targetMealProtein) {
-      liquids.forEach(l => {
-        if (currentProtein < targetMealProtein) {
-          const needed = targetMealProtein - currentProtein;
-          addServing(l, Math.ceil(needed / l.protein_per_serving));
-        }
-      });
-    }
+    liquids.forEach(l => {
+      if (currentProtein < targetMealProtein) {
+        const needed = targetMealProtein - currentProtein;
+        addServing(l, Math.ceil(needed / l.protein_per_serving));
+      }
+    });
 
-    if (currentProtein < targetMealProtein) {
+    // STAGE 2: THE CALORIE OPTIMIZER
+    // If we hit protein but are still short on calories, we fill the plate!
+    if (totalCalories < targetMealCalories) {
       const sides = matchedItems.filter(i => i.category === 'healthy_extra' || i.category === 'side');
-      let remainingItems = [...sides, ...carbs.slice(1)];
+      let remainingItems = [...sides, ...carbs]; // Bring carbs back in to top up calories!
+
       remainingItems.sort((a, b) => {
         if (userGoal === 'gain_weight') {
-          return (b.diet_tag === 'dense_calorie' ? 1 : 0) - (a.diet_tag === 'dense_calorie' ? 1 : 0);
+          // Bulking: Sort by highest calories first to hit target easily
+          return b.calories_per_serving - a.calories_per_serving; 
         } else {
-          return (b.diet_tag === 'volume_filler' ? 1 : 0) - (a.diet_tag === 'volume_filler' ? 1 : 0);
+          // Cutting: Sort by lowest calories first to provide volume without breaking the bank
+          return a.calories_per_serving - b.calories_per_serving; 
         }
       });
+
       remainingItems.forEach(item => {
-        if (currentProtein < targetMealProtein) addServing(item, 1);
+        // Keep adding 1 serving at a time until we hit the calorie target OR hit the item's max limit
+        while (totalCalories < targetMealCalories) {
+          const calsBefore = totalCalories;
+          addServing(item, 1);
+          
+          // Failsafe: If addServing didn't change totalCalories (meaning it hit the 'max_servings' limit), break to prevent infinite loop
+          if (totalCalories === calsBefore) break; 
+        }
       });
     }
 
