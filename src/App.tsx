@@ -264,7 +264,6 @@ function DontMessItDashboard({ session }: { session: any }) {
 
   // Long Press Logic Helpers
   const longPressTimerRef = useRef<any>(null);
-  const isLongPressRef = useRef(false);
 
   const handleOpenEditModal = (item: FoodItem) => {
     // Vibrate to provide haptic feedback if available (mobile)
@@ -721,23 +720,12 @@ function DontMessItDashboard({ session }: { session: any }) {
                           className="flex justify-between items-center group py-1 relative select-none touch-none active:scale-[0.98] transition-transform"
                           onContextMenu={(e) => { if(isAdmin) e.preventDefault(); }}
                           onTouchStart={() => originalItem && isAdmin && (longPressTimerRef.current = setTimeout(() => {
-                            if (navigator.vibrate) navigator.vibrate(50);
-                            setEditingItem(originalItem);
-                            setEditProtein(originalItem.protein_per_serving.toString());
-                            setEditCalories(originalItem.calories_per_serving.toString());
-                            setEditIsLimited(originalItem.is_limited);
-                            setEditMaxServings((originalItem.max_servings || (originalItem.is_limited ? 1 : 2)).toString());
-                            setIsEditModalOpen(true);
+                            handleOpenEditModal(originalItem);
                           }, 800))}
                           onTouchMove={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
                           onTouchEnd={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
                           onMouseDown={() => originalItem && isAdmin && (longPressTimerRef.current = setTimeout(() => {
-                             setEditingItem(originalItem);
-                             setEditProtein(originalItem.protein_per_serving.toString());
-                             setEditCalories(originalItem.calories_per_serving.toString());
-                             setEditIsLimited(originalItem.is_limited); // Use the original from dictionary, not the plate instance
-                             setEditMaxServings((originalItem.max_servings || (originalItem.is_limited ? 1 : 2)).toString());
-                             setIsEditModalOpen(true);
+                             handleOpenEditModal(originalItem);
                           }, 800))}
                           onMouseUp={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
                           onMouseLeave={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
