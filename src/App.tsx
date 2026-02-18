@@ -266,23 +266,6 @@ function DontMessItDashboard({ session }: { session: any }) {
   const longPressTimerRef = useRef<any>(null);
   const isLongPressRef = useRef(false);
 
-  const startLongPress = (item: FoodItem) => {
-    if (!isAdmin) return;
-    isLongPressRef.current = false;
-    longPressTimerRef.current = setTimeout(() => {
-      isLongPressRef.current = true;
-      // Trigger Edit Mode
-      handleOpenEditModal(item);
-    }, 600); // 600ms threshold
-  };
-
-  const endLongPress = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
   const handleOpenEditModal = (item: FoodItem) => {
     // Vibrate to provide haptic feedback if available (mobile)
     if (navigator.vibrate) navigator.vibrate(50);
