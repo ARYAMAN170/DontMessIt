@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from './supabaseClient';
-import { useQuery } from '@tanstack/react-query';
 import { ErrorBoundary } from 'react-error-boundary';
 import Auth from './Auth';
 import Onboarding from './Onboarding';
@@ -363,45 +362,63 @@ function DontMessItDashboard({ session }: { session: any }) {
     }
   };
 
-  // --- REACT QUERY FETCHING ---
-  
-  // 1. Food Dictionary (Long Cache)
-  const { data: foodDictionary = [] } = useQuery({
-    queryKey: ['foodDictionary'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('food_dictionary').select('*');
-      if (error) throw error;
-      return data as FoodItem[];
-    },
-    staleTime: 1000 * 60 * 60 * 24, // 24h
-  });
+  // --- OFFLINE-READY DATA FETCHING ---
+  const [foodDictionary, setFoodDictionary] = useState<FoodItem[]>([]);
+  const [mealsOfDay, setMealsOfDay] = useState<DailyMenu[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // 2. Daily Menus (Short Cache)
-  const targetDateStr = formatDateForDB(selectedDate);
-  
-  const { data: mealsOfDay = [], isLoading: loadingMenu } = useQuery({
-    queryKey: ['dailyMenus', selectedMess, targetDateStr],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('daily_menus')
-        .select('*')
-        .eq('date', targetDateStr)
-        .eq('mess_id', selectedMess);
-      
-      if (error) throw error;
-      return data as DailyMenu[];
-    },
-    staleTime: 1000 * 60 * 30, // 30 mins
-  });
-
-  const loading = loadingMenu && mealsOfDay.length === 0;
-
-  // Set current meal type on mount
+  // Replaces React Query for custom offline caching strategy
   useEffect(() => {
-    const hour = new Date().getHours();
-    const mealType = hour < 10 ? 1 : hour < 15 ? 2 : hour < 18 ? 3 : 4;
-    setCurrentMealType(mealType);
-  }, []);
+    async function fetchData() {
+      // Don't set loading true immediately if we have cache, to avoid flickers?
+      // Actually user code sets it true. But if cache exists, it sets it false immediately.
+      setLoading(true);
+      
+      const hour = new Date().getHours();
+      const mealType = hour < 10 ? 1 : hour < 15 ? 2 : hour < 18 ? 3 : 4;
+      setCurrentMealType(mealType);
+      
+      const targetDateStr = formatDateForDB(selectedDate);
+      const cacheKeyMenus = `dontmessit_menus_${selectedMess}_${targetDateStr}`;
+      const cacheKeyDict = `dontmessit_dictionary`;
+
+      // 1. INSTANT OFFLINE LOAD: Check LocalStorage first
+      const cachedMenus = localStorage.getItem(cacheKeyMenus);
+      const cachedDict = localStorage.getItem(cacheKeyDict);
+
+      if (cachedMenus && cachedDict) {
+        setMealsOfDay(JSON.parse(cachedMenus));
+        setFoodDictionary(JSON.parse(cachedDict));
+        setLoading(false); // Instantly show the UI to the user
+      }
+
+      // 2. BACKGROUND SYNC: Try to get fresh data from Supabase
+      try {
+        const [menusResponse, dictResponse] = await Promise.all([
+          supabase.from('daily_menus').select('*').eq('date', targetDateStr).eq('mess_id', selectedMess),
+          supabase.from('food_dictionary').select('*')
+        ]);
+
+        if (menusResponse.data) {
+          setMealsOfDay(menusResponse.data);
+          // Save fresh data to cache for next time they go offline
+          localStorage.setItem(cacheKeyMenus, JSON.stringify(menusResponse.data)); 
+        }
+        
+        if (dictResponse.data) {
+          setFoodDictionary(dictResponse.data);
+          localStorage.setItem(cacheKeyDict, JSON.stringify(dictResponse.data));
+        }
+      } catch (error) {
+        console.warn("Offline or network error, relying entirely on cached data.", error);
+        // If they have no internet, the app just silently fails the fetch and keeps showing the cached data!
+      }
+      
+      setLoading(false);
+    }
+    
+    fetchData();
+  }, [selectedMess, selectedDate]);
 
   // --- THE THALI ENGINE ---
   // --- THE UPGRADED TWO-STAGE THALI ENGINE ---
@@ -717,16 +734,20 @@ function DontMessItDashboard({ session }: { session: any }) {
                           return (
                         <div 
                           key={idx} 
-                          className="flex justify-between items-center group py-1 relative select-none touch-none active:scale-[0.98] transition-transform"
+                          className="flex justify-between items-center group py-1 relative select-none active:scale-[0.98] transition-transform"
                           onContextMenu={(e) => { if(isAdmin) e.preventDefault(); }}
+                          
+                          // Mobile Events
                           onTouchStart={() => originalItem && isAdmin && (longPressTimerRef.current = setTimeout(() => {
                             handleOpenEditModal(originalItem);
-                          }, 800))}
+                          }, 500))}
                           onTouchMove={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
                           onTouchEnd={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
+                          
+                          // Desktop Events
                           onMouseDown={() => originalItem && isAdmin && (longPressTimerRef.current = setTimeout(() => {
                              handleOpenEditModal(originalItem);
-                          }, 800))}
+                          }, 500))}
                           onMouseUp={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
                           onMouseLeave={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
                         >
