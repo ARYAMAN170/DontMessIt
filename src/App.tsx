@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { useQuery } from '@tanstack/react-query';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -227,7 +227,7 @@ export default function App() {
 
   return (
     <ErrorBoundary FallbackComponent={ErrorFallback} onReset={() => window.location.reload()}>
-      <DontMessItDashboard />
+      <DontMessItDashboard session={session} />
     </ErrorBoundary>
   );
 }
@@ -235,7 +235,7 @@ export default function App() {
 // ==========================================
 // 2. THE DASHBOARD COMPONENT (THE ACTUAL APP)
 // ==========================================
-function DontMessItDashboard() {
+function DontMessItDashboard({ session }: { session: any }) {
   const [currentMealType, setCurrentMealType] = useState<number>(1);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -249,6 +249,88 @@ function DontMessItDashboard() {
 
   // --- DATE NAVIGATION STATE ---
   const [selectedDate, setSelectedDate] = useState(new Date());
+
+  // --- GOD MODE: ADMIN STATE & LOGIC ---
+  const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editProtein, setEditProtein] = useState<string>('');
+  const [editCalories, setEditCalories] = useState<string>('');
+  const [editIsLimited, setEditIsLimited] = useState<boolean>(false);
+  const [editMaxServings, setEditMaxServings] = useState<string>('');
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Security Check: Only specific email can edit
+  const isAdmin = session?.user?.email === 'aryaman.singh2022@vitstudent.ac.in';
+
+  // Long Press Logic Helpers
+  const longPressTimerRef = useRef<any>(null);
+  const isLongPressRef = useRef(false);
+
+  const startLongPress = (item: FoodItem) => {
+    if (!isAdmin) return;
+    isLongPressRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      // Trigger Edit Mode
+      handleOpenEditModal(item);
+    }, 600); // 600ms threshold
+  };
+
+  const endLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleOpenEditModal = (item: FoodItem) => {
+    // Vibrate to provide haptic feedback if available (mobile)
+    if (navigator.vibrate) navigator.vibrate(50);
+    
+    setEditingItem(item);
+    setEditProtein(item.protein_per_serving.toString());
+    setEditCalories(item.calories_per_serving.toString());
+    setEditIsLimited(item.is_limited);
+    setEditMaxServings(item.max_servings?.toString() || (item.is_limited ? '1' : '2'));
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateFoodMacro = async () => {
+    if (!editingItem) return;
+    setIsUpdating(true);
+
+    const updatedProtein = parseFloat(editProtein);
+    const updatedCalories = parseInt(editCalories);
+    const updatedMaxServings = parseInt(editMaxServings);
+
+    try {
+      const { error } = await supabase
+        .from('food_dictionary')
+        .update({
+          protein_per_serving: updatedProtein,
+          calories_per_serving: updatedCalories,
+          is_limited: editIsLimited,
+          max_servings: updatedMaxServings
+        })
+        .eq('item_name', editingItem.item_name);
+
+      if (error) throw error;
+      
+      // Success! Close modal and refresh data via query invalidation
+      // Since we use staleTime, we need to force refetch or optimistic update.
+      // For simplicity, we'll reload page or let React Query eventually catch up if we had hook access.
+      // But we can just close modal for now. Ideally invalidateQuery.
+      // Note: In a real app, use queryClient.invalidateQueries(['foodDictionary']) here.
+      window.location.reload(); // Simple brute force refresh to see changes immediately
+      
+    } catch (err: any) {
+      alert(`Update failed: ${err.message}`);
+    } finally {
+      setIsUpdating(false);
+      setIsEditModalOpen(false);
+    }
+  };
+
 
   const formatDateForDB = (date: Date) => {
     return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -646,9 +728,38 @@ function DontMessItDashboard() {
                          ...grouped.carb.map(i => ({...i, type: 'carb'})),
                          ...grouped.filler.map(i => ({...i, type: 'fill'})),
                          ...grouped.extra.map(i => ({...i, type: 'extra'}))
-                      ].map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center group py-1">
-                          <div className="flex items-center gap-3">
+                      ].map((item, idx) => {
+                          // Find original food item to edit
+                          const originalItem = foodDictionary.find(d => d.item_name === item.item);
+                          
+                          return (
+                        <div 
+                          key={idx} 
+                          className="flex justify-between items-center group py-1 relative select-none touch-none active:scale-[0.98] transition-transform"
+                          onContextMenu={(e) => { if(isAdmin) e.preventDefault(); }}
+                          onTouchStart={() => originalItem && isAdmin && (longPressTimerRef.current = setTimeout(() => {
+                            if (navigator.vibrate) navigator.vibrate(50);
+                            setEditingItem(originalItem);
+                            setEditProtein(originalItem.protein_per_serving.toString());
+                            setEditCalories(originalItem.calories_per_serving.toString());
+                            setEditIsLimited(originalItem.is_limited);
+                            setEditMaxServings((originalItem.max_servings || (originalItem.is_limited ? 1 : 2)).toString());
+                            setIsEditModalOpen(true);
+                          }, 800))}
+                          onTouchMove={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
+                          onTouchEnd={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
+                          onMouseDown={() => originalItem && isAdmin && (longPressTimerRef.current = setTimeout(() => {
+                             setEditingItem(originalItem);
+                             setEditProtein(originalItem.protein_per_serving.toString());
+                             setEditCalories(originalItem.calories_per_serving.toString());
+                             setEditIsLimited(originalItem.is_limited); // Use the original from dictionary, not the plate instance
+                             setEditMaxServings((originalItem.max_servings || (originalItem.is_limited ? 1 : 2)).toString());
+                             setIsEditModalOpen(true);
+                          }, 800))}
+                          onMouseUp={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
+                          onMouseLeave={() => { if(longPressTimerRef.current) clearTimeout(longPressTimerRef.current); }}
+                        >
+                          <div className="flex items-center gap-3 pointer-events-none">
                             <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs shadow-md ${
                               item.type === 'prot' ? 'bg-green-500/10 text-green-400 border border-green-500/20 shadow-green-900/10' :
                               item.type === 'carb' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-orange-900/10' :
@@ -663,13 +774,15 @@ function DontMessItDashboard() {
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 pointer-events-none">
                             <span className="text-[10px] font-bold text-slate-500 bg-white/5 py-0.5 px-1.5 rounded border border-white/5">{Math.round(item.calories)}</span>
                             <span className="text-[10px] font-bold text-slate-500 bg-white/5 py-0.5 px-1.5 rounded border border-white/5">{item.protein}g</span>
                           </div>
+                          
+                          {/* Admin Hint */}
+                          {isAdmin && <div className="absolute inset-0 border border-dashed border-white/5 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none"></div>}
                         </div>
-
-                      ))}
+                      )})}
                     </div>
                   </div>
                   
@@ -691,6 +804,99 @@ function DontMessItDashboard() {
           })
         )}
       </main>
+
+      {/* GOD MODE MODAL */}
+      {isEditModalOpen && editingItem && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
+          <div className="w-full max-w-sm bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-300 ring-1 ring-white/5">
+            {/* Inner Glow */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-70 blur-md"></div>
+
+            <div className="space-y-6 relative z-10">
+              {/* Header */}
+              <div>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">ADMIN GOD MODE</p>
+                <h2 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 italic tracking-tight truncate">
+                  {editingItem.item_name}
+                </h2>
+              </div>
+
+              {/* Form Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Protein (g)</label>
+                  <input 
+                    type="number" 
+                    value={editProtein} 
+                    onChange={(e) => setEditProtein(e.target.value)} 
+                    className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 text-white font-bold p-3 rounded-xl outline-none transition-all focus:ring-1 focus:ring-blue-500/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Calories</label>
+                  <input 
+                    type="number" 
+                    value={editCalories} 
+                    onChange={(e) => setEditCalories(e.target.value)} 
+                    className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 text-white font-bold p-3 rounded-xl outline-none transition-all focus:ring-1 focus:ring-blue-500/50"
+                  />
+                </div>
+              </div>
+
+              {/* Toggles */}
+              <div className="bg-slate-800/50 rounded-xl p-3 border border-white/5 space-y-4">
+                 {/* Limited Toggle */}
+                 <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-300">Is Limited Item?</span>
+                    <button 
+                      onClick={() => setEditIsLimited(!editIsLimited)}
+                      className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${editIsLimited ? 'bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-slate-700'}`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all duration-300 ${editIsLimited ? 'left-7' : 'left-1'}`}></div>
+                    </button>
+                 </div>
+
+                 {/* Max Servings Input (Only if limited) */}
+                 <div className={`transition-all duration-300 overflow-hidden ${editIsLimited ? 'max-h-20 opacity-100' : 'max-h-0 opacity-50'}`}>
+                    <div className="flex items-center justify-between border-t border-white/5 pt-3 mt-1">
+                      <span className="text-xs font-bold text-slate-400">Max Servings allowed</span>
+                      <input 
+                        type="number" 
+                        value={editMaxServings} 
+                        onChange={(e) => setEditMaxServings(e.target.value)} 
+                        className="w-16 bg-slate-900 border border-slate-700 text-white font-bold py-1 px-2 rounded-lg text-center text-sm outline-none focus:border-blue-500"
+                      />
+                    </div>
+                 </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-bold text-xs rounded-xl transition-colors"
+                >
+                  CANCEL
+                </button>
+                <button 
+                  onClick={handleUpdateFoodMacro}
+                  disabled={isUpdating}
+                  className="flex-[2] py-3 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs rounded-xl shadow-lg shadow-blue-900/20 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isUpdating ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                      UPDATING...
+                    </>
+                  ) : (
+                    'UPDATE DATABASE'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
