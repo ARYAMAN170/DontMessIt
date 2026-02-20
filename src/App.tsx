@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient';
 import { ErrorBoundary } from 'react-error-boundary';
 import Auth from './Auth';
 import Onboarding from './Onboarding';
+import PlateScanner from './PlateScanner';
 import './App.css';
 
 // --- SKELETON LOADER COMPONENT ---
@@ -682,6 +683,7 @@ function DontMessItDashboard({ session }: { session: any }) {
                   
                   {/* STRATEGY BOX (Context Aware) with Premium Gradient */}
                   {isCurrent && (
+                    <>
                     <div className={`p-3 rounded-xl border relative overflow-hidden group ${userGoal === 'gain_weight' ? 'bg-gradient-to-br from-blue-900/40 to-slate-900/40 border-blue-500/20' : 'bg-gradient-to-br from-orange-900/40 to-slate-900/40 border-orange-500/20'}`}>
                       <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${userGoal === 'gain_weight' ? 'from-blue-500 to-transparent' : 'from-orange-500 to-transparent'}`}></div>
                       <div className="relative z-10 flex items-start gap-2">
@@ -712,6 +714,17 @@ function DontMessItDashboard({ session }: { session: any }) {
                         </div>
                       </div>
                     </div>
+
+                    <div className="mt-6">
+                      <PlateScanner 
+                        currentMenu={meal.raw_items} 
+                        onScanSuccess={(loggedItems) => {
+                          console.log("AI Found these items on the tray:", loggedItems);
+                          // Next, we will write the logic to subtract these from your daily goal!
+                        }} 
+                      />
+                    </div>
+                    </>
                   )}
 
                   {/* AI PLATE */}
