@@ -6,42 +6,53 @@ export default function Onboarding({ session, onComplete }: { session: any, onCo
   const [loading, setLoading] = useState(false);
   
   // User Data State
-  const [diet, setDiet] = useState('non-veg');
+  const [gender, setGender] = useState<'male' | 'female'>('male');
+  const [age, setAge] = useState('');
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
-  const [targetWeight, setTargetWeight] = useState('');
-  const [weeks, setWeeks] = useState('12');
+  const [activityLevel, setActivityLevel] = useState<number>(1.2);
+  const [goal, setGoal] = useState<'loss' | 'gain'>('gain');
 
   const calculateAndSave = async () => {
     setLoading(true);
     const w = parseFloat(weight);
-    const tw = parseFloat(targetWeight);
     const h = parseInt(height);
-    const wk = parseInt(weeks);
+    const a = parseInt(age);
 
-    // Basic BMR calculation (Mifflin-St Jeor simplified for students)
-    const bmr = (10 * w) + (6.25 * h) - (5 * 20) + 5; // Assuming avg age 20
-    const tdee = bmr * 1.55; // Moderate activity (walking around campus + dumbbells)
+    // Step 1: BMR (Mifflin-St Jeor)
+    // Men: (10 × weight) + (6.25 × height) - (5 × age) + 5
+    // Women: (10 × weight) + (6.25 × height) - (5 × age) - 161
+    const s = gender === 'male' ? 5 : -161;
+    const bmr = (10 * w) + (6.25 * h) - (5 * a) + s;
 
-    // Calculate Calorie Deficit/Surplus (1kg body weight = ~7700 kcal)
-    const weightDifference = tw - w; 
-    const totalCalsNeeded = weightDifference * 7700;
-    const dailyCalorieOffset = totalCalsNeeded / (wk * 7);
+    // Step 2: TDEE
+    const tdee = bmr * activityLevel;
 
-    const dailyCalorieGoal = Math.round(tdee + dailyCalorieOffset);
-    
-    // Protein Logic: High protein for bulking/cutting
-    const dailyProteinGoal = Math.round(w * 2.2); // 2.2g per kg of bodyweight
+    // Step 3: Goal Modifier
+    // Fat Loss: -400 (Avg of 300-500)
+    // Muscle Gain: +300 (Avg of 200-400)
+    const surplusDeficit = goal === 'gain' ? 300 : -400;
+    const dailyCalorieGoal = Math.round(tdee + surplusDeficit);
+
+    // Step 4: Macronutrient Division
+    // Protein: 1.8g to 2.2g per kg (Using 2.0g as standard)
+    // Capped for safety/absorption typically, but prompt implies specific calculation.
+    // "For 57 kg, this is strictly capped around 120g to 130g" -> ~2.1-2.2g/kg.
+    // Let's use 2.2g/kg as the upper bound for "Builder".
+    const dailyProteinGoal = Math.round(w * 2.2); 
 
     // Save to Supabase
+    // Note: We are not asking for target weight or weeks anymore based on the new flow request, 
+    // but the DB might expect them. We'll send current weight as target or null if allowed.
+    // We'll keep 'diet_preference' as 'non-veg' default since we removed the question.
     const { error } = await supabase
       .from('profiles')
       .update({
         height_cm: h,
         weight_kg: w,
-        target_weight_kg: tw,
-        weeks_to_goal: wk,
-        diet_preference: diet,
+        target_weight_kg: goal === 'gain' ? w + 5 : w - 5, // Dummy target for now
+        weeks_to_goal: 12, // Default
+        diet_preference: 'non-veg', // Default
         daily_calorie_goal: dailyCalorieGoal,
         daily_protein_goal: dailyProteinGoal,
         is_onboarded: true
@@ -51,10 +62,10 @@ export default function Onboarding({ session, onComplete }: { session: any, onCo
     if (error) {
       console.error("Error saving profile:", error);
     } else {
-      // Save locally for instant UI updates
       localStorage.setItem('dontmessit_protein', dailyProteinGoal.toString());
       localStorage.setItem('dontmessit_calories', dailyCalorieGoal.toString());
-      onComplete(); // Trigger the dashboard to load
+      localStorage.setItem('dontmessit_goal', goal === 'gain' ? 'gain_weight' : 'lose_weight');
+      onComplete(); 
     }
     setLoading(false);
   };
@@ -79,70 +90,111 @@ export default function Onboarding({ session, onComplete }: { session: any, onCo
 
         {step === 1 && (
           <div className="glass-panel p-6 rounded-3xl animate-fade-in-up border border-white/5">
-            <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-wide">Nutrition Source</h1>
-            <p className="text-xs text-slate-400 mb-8 font-medium leading-relaxed">
-              We'll auto-filter the mess menu to show only what you can eat.
-            </p>
-            
-            <div className="space-y-3">
-              {['veg', 'egg', 'non-veg'].map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setDiet(type)}
-                  className={`w-full p-5 rounded-2xl border font-black text-left uppercase tracking-wider transition-all duration-300 relative overflow-hidden group ${
-                    diet === type 
-                    ? 'border-blue-500 bg-blue-600/20 text-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.3)]' 
-                    : 'border-slate-700 bg-slate-800/30 text-slate-500 hover:border-slate-500 hover:bg-slate-700/50'
-                  }`}
-                >
-                  <span className="relative z-10 flex justify-between items-center">
-                    {type === 'veg' ? '🥦 Pure Vegetarian' : type === 'egg' ? '🍳 Eggetarian' : '🍗 Non-Vegetarian'}
-                    {diet === type && <div className="w-2 h-2 rounded-full bg-blue-400 shadow-[0_0_10px_currentColor]"></div>}
-                  </span>
-                </button>
-              ))}
-            </div>
-            
-            <button onClick={() => setStep(2)} className="w-full mt-10 bg-white text-slate-900 font-black uppercase tracking-widest py-4 rounded-xl hover:bg-slate-200 active:scale-95 transition-all shadow-lg">
-              Confirm & Next
-            </button>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="glass-panel p-6 rounded-3xl animate-fade-in-up border border-white/5">
             <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-wide">Physique Stats</h1>
             <p className="text-xs text-slate-400 mb-8 font-medium leading-relaxed">
-              Required to calculate your Basal Metabolic Rate (BMR).
+              Step 1: Calculating Engine Idle Speed (BMR).
             </p>
             
-            <div className="space-y-6">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1 mb-2 block">Height (cm)</label>
-                <input 
-                  type="number" 
-                  value={height} 
-                  onChange={(e) => setHeight(e.target.value)} 
-                  placeholder="175" 
-                  className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-black text-2xl text-white placeholder-slate-700 focus:border-blue-500 outline-none transition-all" 
-                />
+            <div className="space-y-4">
+              {/* Gender */}
+              <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-700">
+                 <button 
+                  onClick={() => setGender('male')}
+                  className={`flex-1 py-3 px-4 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${gender === 'male' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                 >
+                   Male
+                 </button>
+                 <button 
+                  onClick={() => setGender('female')}
+                  className={`flex-1 py-3 px-4 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${gender === 'female' ? 'bg-pink-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                 >
+                   Female
+                 </button>
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1 mb-2 block">Age</label>
+                    <input 
+                      type="number" 
+                      value={age} 
+                      onChange={(e) => setAge(e.target.value)} 
+                      placeholder="22" 
+                      className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-black text-xl text-white placeholder-slate-700 focus:border-blue-500 outline-none transition-all" 
+                    />
+                 </div>
+                 <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1 mb-2 block">Height (cm)</label>
+                    <input 
+                      type="number" 
+                      value={height} 
+                      onChange={(e) => setHeight(e.target.value)} 
+                      placeholder="178" 
+                      className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-black text-xl text-white placeholder-slate-700 focus:border-blue-500 outline-none transition-all" 
+                    />
+                 </div>
+              </div>
+
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1 mb-2 block">Current Weight (kg)</label>
                 <input 
                   type="number" 
                   value={weight} 
                   onChange={(e) => setWeight(e.target.value)} 
-                  placeholder="65" 
+                  placeholder="57" 
                   className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-black text-2xl text-white placeholder-slate-700 focus:border-blue-500 outline-none transition-all" 
                 />
               </div>
             </div>
             
-            <div className="flex gap-4 mt-10">
+            <button 
+              onClick={() => setStep(2)} 
+              disabled={!age || !height || !weight}
+              className="w-full mt-8 bg-white text-slate-900 font-black uppercase tracking-widest py-4 rounded-xl hover:bg-slate-200 active:scale-95 transition-all shadow-lg disabled:opacity-50 disabled:grayscale"
+            >
+              Next: Activity
+            </button>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="glass-panel p-6 rounded-3xl animate-fade-in-up border border-white/5">
+            <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-wide">Activity Level</h1>
+            <p className="text-xs text-slate-400 mb-6 font-medium leading-relaxed">
+              Step 2: The Activity Multiplier (TDEE). Be honest.
+            </p>
+            
+            <div className="space-y-3">
+               {[
+                 { val: 1.2, label: 'Sedentary', sub: 'Desk job, zero exercise' },
+                 { val: 1.375, label: 'Lightly Active', sub: 'Light exercise 1-3 days/week' },
+                 { val: 1.55, label: 'Moderately Active', sub: 'Hard training 3-5 days/week' },
+                 { val: 1.725, label: 'Highly Active', sub: '6-day Split + Interaction' }
+               ].map((opt) => (
+                 <button
+                   key={opt.val}
+                   onClick={() => setActivityLevel(opt.val)}
+                   className={`w-full p-4 rounded-xl border text-left transition-all relative overflow-hidden ${
+                     activityLevel === opt.val 
+                     ? 'bg-blue-600/20 border-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.2)]' 
+                     : 'bg-slate-900/40 border-slate-700 hover:bg-slate-800'
+                   }`}
+                 >
+                    <div className="flex justify-between items-center relative z-10">
+                       <div>
+                          <p className={`text-sm font-black uppercase tracking-wide ${activityLevel === opt.val ? 'text-white' : 'text-slate-400'}`}>{opt.label}</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{opt.sub}</p>
+                       </div>
+                       {activityLevel === opt.val && <div className="w-3 h-3 rounded-full bg-blue-400 shadow-[0_0_10px_currentColor]"></div>}
+                    </div>
+                 </button>
+               ))}
+            </div>
+            
+            <div className="flex gap-4 mt-8">
               <button onClick={() => setStep(1)} className="px-6 bg-slate-800 text-slate-400 font-bold py-4 rounded-xl hover:bg-slate-700 transition-all uppercase text-xs tracking-wider">Back</button>
-              <button onClick={() => setStep(3)} disabled={!height || !weight} className="flex-1 bg-white text-slate-900 font-black uppercase tracking-widest py-4 rounded-xl hover:bg-slate-200 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                Next Step
+              <button onClick={() => setStep(3)} className="flex-1 bg-white text-slate-900 font-black uppercase tracking-widest py-4 rounded-xl hover:bg-slate-200 active:scale-95 transition-all">
+                Next: Goal
               </button>
             </div>
           </div>
@@ -152,43 +204,45 @@ export default function Onboarding({ session, onComplete }: { session: any, onCo
           <div className="glass-panel p-6 rounded-3xl animate-fade-in-up border border-white/5">
             <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-wide">The Mission</h1>
             <p className="text-xs text-slate-400 mb-8 font-medium leading-relaxed">
-              Define your target. Be realistic.
+              Step 3: The Goal Modifier. This adjusts your TDEE.
             </p>
             
-            <div className="space-y-6">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1 mb-2 block">Target Weight (kg)</label>
-                <input 
-                  type="number" 
-                  value={targetWeight} 
-                  onChange={(e) => setTargetWeight(e.target.value)} 
-                  placeholder="75" 
-                  className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-black text-2xl text-white placeholder-slate-700 focus:border-blue-500 outline-none transition-all" 
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1 mb-2 block">Timeframe (Weeks)</label>
-                <input 
-                  type="number" 
-                  value={weeks} 
-                  onChange={(e) => setWeeks(e.target.value)} 
-                  placeholder="12" 
-                  className="w-full p-4 bg-slate-900/50 border border-slate-700 rounded-xl font-black text-2xl text-white placeholder-slate-700 focus:border-blue-500 outline-none transition-all" 
-                />
-                <p className="text-[10px] font-bold text-slate-600 mt-2 ml-1">
-                  RECOMMENDED: ~0.5kg change per week
-                </p>
-              </div>
+            <div className="grid grid-cols-1 gap-4">
+               <button
+                  onClick={() => setGoal('gain')}
+                  className={`p-6 rounded-2xl border transition-all text-center relative overflow-hidden group ${
+                    goal === 'gain' 
+                    ? 'bg-blue-600/20 border-blue-500 shadow-[0_0_30px_rgba(37,99,235,0.25)]' 
+                    : 'bg-slate-900/40 border-slate-700 grayscale opacity-60 hover:opacity-100 hover:grayscale-0'
+                  }`}
+               >
+                  <h3 className={`text-lg font-black uppercase tracking-tighter mb-1 ${goal === 'gain' ? 'text-blue-400' : 'text-slate-300'}`}>Lean Muscle Gain</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">+300 kcal Surplus</p>
+                  <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-50"></div>
+               </button>
+
+               <button
+                  onClick={() => setGoal('loss')}
+                  className={`p-6 rounded-2xl border transition-all text-center relative overflow-hidden group ${
+                    goal === 'loss' 
+                    ? 'bg-orange-600/20 border-orange-500 shadow-[0_0_30px_rgba(234,88,12,0.25)]' 
+                    : 'bg-slate-900/40 border-slate-700 grayscale opacity-60 hover:opacity-100 hover:grayscale-0'
+                  }`}
+               >
+                  <h3 className={`text-lg font-black uppercase tracking-tighter mb-1 ${goal === 'loss' ? 'text-orange-400' : 'text-slate-300'}`}>Fat Loss</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">-400 kcal Deficit</p>
+                  <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-transparent via-orange-500 to-transparent opacity-50"></div>
+               </button>
             </div>
             
             <div className="flex gap-4 mt-10">
               <button onClick={() => setStep(2)} className="px-6 bg-slate-800 text-slate-400 font-bold py-4 rounded-xl hover:bg-slate-700 transition-all uppercase text-xs tracking-wider">Back</button>
               <button 
                 onClick={calculateAndSave} 
-                disabled={loading || !targetWeight || !weeks} 
-                className="flex-1 bg-blue-600 text-white font-black uppercase tracking-widest py-4 rounded-xl hover:bg-blue-500 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_30px_rgba(37,99,235,0.4)]"
+                disabled={loading} 
+                className="flex-1 bg-white text-slate-900 font-black uppercase tracking-widest py-4 rounded-xl hover:bg-slate-200 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
               >
-                {loading ? 'CALCULATING...' : 'INITIATE PLAN'}
+                {loading ? 'CALCULATING...' : 'INITIATE PROTOCOL'}
               </button>
             </div>
           </div>
